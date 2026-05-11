@@ -428,6 +428,10 @@ typedef struct {
 	mc_motor_type motor_type;
 	mc_sensor_mode sensor_mode;
 
+	// Parking brake params - can only be used if motor_type is MOTOR_TYPE_DC
+	bool dc_enable_parking_brake;
+	float dc_parking_brake_current;
+
 	// Sensorless (bldc)
 	float sl_min_erpm;
 	float sl_min_erpm_cycle_int_limit;

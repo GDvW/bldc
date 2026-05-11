@@ -1,0 +1,63 @@
+# Changes
+
+This file lists the changes compared to the original v 6.06 release.
+
+## Configuration parameters
+
+### Datatype
+
+Added the following in mc_configuration in datatypes.h:
+
+```C
+// Parking brake params - can only be used if motor_type is MOTOR_TYPE_DC
+bool dc_enable_parking_brake;
+float dc_parking_brake_current;
+```
+
+### Confgenerator
+
+I used vesc tool motor configuration parameter editor to generate the param files. 
+
+- Added the params in `Param editor mcconf` in VESC tool
+- After that in the same window:
+  - File->Save XML as to backup the changed version of the parameters
+  - Tools->Export configuration parser to create a parser for C to use (use confgenerator as name)
+  - However, this file only includes the mcconf parts
+  - Using a tool like WinMerge, observe the difference between the files.
+
+## Code changes
+
+- `confgenerator_serialize_mcconf` in `confgenerator.c` below `buffer[ind++] = conf->sensor_mode;`:
+
+    ```c
+    buffer[ind++] = conf->dc_enable_parking_brake;
+    buffer_append_float32_auto(buffer, conf->dc_parking_brake_current, &ind);
+    ```
+
+- `confgenerator_deserialize_mcconf` in `confgenerator.c` below `conf->sensor_mode = buffer[ind++];`:
+
+    ```c
+    conf->dc_enable_parking_brake = buffer[ind++];
+    conf->dc_parking_brake_current = buffer_get_float32_auto(buffer, &ind);
+    ```
+
+- `confgenerator_set_defaults_mcconf` in `confgenerator.c` below `conf->sensor_mode = MCCONF_SENSOR_MODE;`:
+
+    ```c
+    conf->dc_enable_parking_brake = false;
+    conf->dc_parking_brake_current = 0;
+    ```
+
+- In `confgenerator.h` change the define to (this may be dependent on the version of the config, please check with VESC tool through procedure described above)
+
+    ```h
+    #define MCCONF_SIGNATURE     1250443276
+    ```
+
+- In `mc_configuration` struct in `datatypes.h` add below `mc_sensor_mode sensor_mode;`:
+
+    ```h
+    // Parking brake params - can only be used if motor_type is MOTOR_TYPE_DC
+    bool dc_enable_parking_brake;
+    float dc_parking_brake_current;
+    ```
