@@ -62,7 +62,7 @@ I used vesc tool motor configuration parameter editor to generate the param file
     float dc_parking_brake_current;
     ```
 
-change version in `conf_general.h`
+change version in `conf_general.h`. Max allowed value is 255.255.
 
 ### VESC-tool
 
