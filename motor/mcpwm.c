@@ -944,9 +944,11 @@ static void full_brake_hw(void) {
 	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
 	TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
 
-	TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
-	TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
-	TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
+	if (conf->motor_type != MOTOR_TYPE_DC || !conf->dc_enable_parking_brake){
+		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
+		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
+	}
 
 	TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_ForcedAction_InActive);
 	TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
@@ -1528,7 +1530,7 @@ void mcpwm_adc_inj_int_handler(void) {
 
 #ifdef HW_HAS_3_SHUNTS
 	curr2_currsamp -= curr2_offset;
-	curr2 -= curr2_offset;
+	curr2 -= curr2_offset;	
 #endif
 
 #if CURR1_DOUBLE_SAMPLE || CURR2_DOUBLE_SAMPLE
@@ -2656,7 +2658,9 @@ static void update_timer_attempt(void) {
 		// Set the new configuration
 		TIM1->ARR = timer_struct.top;
 		TIM1->CCR1 = timer_struct.duty;
-		TIM1->CCR2 = timer_struct.duty;
+		if (conf->motor_type != MOTOR_TYPE_DC || !conf->dc_enable_parking_brake){
+			TIM1->CCR2 = timer_struct.duty;
+		}
 		TIM1->CCR3 = timer_struct.duty;
 		TIM8->CCR1 = timer_struct.val_sample;
 		TIM1->CCR4 = timer_struct.curr1_sample;
@@ -2689,10 +2693,12 @@ static void set_switching_frequency(float frequency) {
 
 static void set_next_comm_step(int next_step) {
 	if (conf->motor_type == MOTOR_TYPE_DC) {
-		// 0
-		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_OCMode_Inactive);
-		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
-		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
+		if (!conf->dc_enable_parking_brake){
+			// 0
+			TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_OCMode_Inactive);
+			TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+			TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
+		}
 
 		if (direction) {
 			// +

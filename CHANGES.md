@@ -62,7 +62,15 @@ I used vesc tool motor configuration parameter editor to generate the param file
     float dc_parking_brake_current;
     ```
 
-change version in `conf_general.h`. Max allowed value is 255.255.
+- change version in `conf_general.h`. Max allowed value is 255.255.
+- Surround all things referencing `TIM_Channel_2` by this condition: `if (conf->motor_type != MOTOR_TYPE_DC || !conf->dc_enable_parking_brake)` In some places this can be simplified (e.g. in `commutate`) if a part or the whole of outcome of the condition is fixed. Also change `TIM1->CCR2` in `update_timer_attempt` to
+
+    ```c
+    if (conf->motor_type != MOTOR_TYPE_DC || !conf->dc_enable_parking_brake){
+        TIM1->CCR2 = timer_struct.duty;
+    }
+    ```
+
 
 ### VESC-tool
 
