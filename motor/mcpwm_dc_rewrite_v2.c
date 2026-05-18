@@ -4,18 +4,18 @@
 	This file is part of the VESC firmware.
 
 	The VESC firmware is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+	it under the terms of the GNU General Public License as published by
+	the Free Software Foundation, either version 3 of the License, or
+	(at your option) any later version.
 
-    The VESC firmware is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
+	The VESC firmware is distributed in the hope that it will be useful,
+	but WITHOUT ANY WARRANTY; without even the implied warranty of
+	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+	GNU General Public License for more details.
 
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-    */
+	You should have received a copy of the GNU General Public License
+	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+	*/
 
 #include "ch.h"
 #include "hal.h"
@@ -36,7 +36,8 @@
 #include "timer.h"
 
 // Structs
-typedef struct {
+typedef struct
+{
 	// If updated is false, it will applied the next time update_timer_attempt is run
 	// Else it will be ignored
 	volatile bool updated;
@@ -54,13 +55,20 @@ typedef struct {
 
 // Private variables
 static volatile int direction; // 0 or 1
-static volatile int curr_samp_volt; // Use the voltage-synchronized samples for this current sample
+// Use the voltage-synchronized samples for this current sample
+// Regular ADC -> ADC from DMA buffer
+// Injected ADC -> triggered by timer
+static volatile bool use_regular_adc;
 // Are signed
 static volatile float dutycycle_set;
 static volatile float dutycycle_now;
 static volatile float speed_pid_set_rpm;
 static volatile float current_set;
 static volatile float rpm_now;
+static volatile bool h_bridge_active;
+
+// Not used, but can be used to limit transients
+static volatile unsigned int slow_ramping_cycles;
 
 // Current measurement parameters
 static volatile bool dccal_done;
@@ -79,6 +87,7 @@ static volatile float last_current_sample;
 static volatile float last_current_sample_filtered;
 
 static volatile float last_adc_isr_duration;
+static volatile float last_inj_adc_isr_duration;
 
 static volatile mc_configuration *conf;
 
@@ -92,12 +101,20 @@ static volatile mc_timer_struct timer_struct;
 static volatile bool init_done = false;
 
 // Current FIR filter
-#define CURR_FIR_TAPS_BITS		4
-#define CURR_FIR_LEN			(1 << CURR_FIR_TAPS_BITS)
-#define CURR_FIR_FCUT			0.15
+#define CURR_FIR_TAPS_BITS 4
+#define CURR_FIR_LEN (1 << CURR_FIR_TAPS_BITS)
+#define CURR_FIR_FCUT 0.15
 static volatile float current_fir_coeffs[CURR_FIR_LEN];
 static volatile float current_fir_samples[CURR_FIR_LEN];
 static volatile int current_fir_index = 0;
+
+// Amplitude FIR filter
+#define AMP_FIR_TAPS_BITS 7
+#define AMP_FIR_LEN (1 << AMP_FIR_TAPS_BITS)
+#define AMP_FIR_FCUT 0.02
+static volatile float amp_fir_coeffs[AMP_FIR_LEN];
+static volatile float amp_fir_samples[AMP_FIR_LEN];
+static volatile int amp_fir_index = 0;
 
 // Private functions
 static void set_duty_cycle_hl(float dutyCycle);
@@ -109,10 +126,11 @@ static void do_dc_cal(void);
 
 static void set_next_timer_settings(mc_timer_struct *settings);
 static void update_adc_sample_pos(mc_timer_struct *timer_tmp);
+static void set_direction_hw(void);
 
-
-//Initializes the motor controller
-void mcpwm_dc_init(volatile mc_configuration *configuration){
+// Initializes the motor controller
+void mcpwm_dc_init(volatile mc_configuration *configuration)
+{
 	utils_sys_lock_cnt();
 
 	init_done = false;
@@ -123,15 +141,18 @@ void mcpwm_dc_init(volatile mc_configuration *configuration){
 	state = MC_STATE_OFF;
 
 	// Create current FIR filter
-	filter_create_fir_lowpass((float*)current_fir_coeffs, CURR_FIR_FCUT, CURR_FIR_TAPS_BITS, 1);
+	filter_create_fir_lowpass((float *)current_fir_coeffs, CURR_FIR_FCUT, CURR_FIR_TAPS_BITS, 1);
+
+	// Create amplitude FIR filter
+	filter_create_fir_lowpass((float *)amp_fir_coeffs, AMP_FIR_FCUT, AMP_FIR_TAPS_BITS, 1);
 
 	// Initialize clocks
 	// TIM1 is used to generate PWM signals
 	// TIM8 and TIM1->CC4 is used for ADC sampling
 
 	// Create structs for configuration of clocks
-	TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
-	TIM_OCInitTypeDef  TIM_OCInitStructure;
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+	TIM_OCInitTypeDef TIM_OCInitStructure;
 	TIM_BDTRInitTypeDef TIM_BDTRInitStructure;
 
 	// Make sure clocks are in a known state
@@ -169,12 +190,12 @@ void mcpwm_dc_init(volatile mc_configuration *configuration){
 	TIM_OCInitStructure.TIM_OCIdleState = TIM_OCIdleState_Set;
 
 #ifndef INVERTED_BOTTOM_DRIVER_INPUT
-	TIM_OCInitStructure.TIM_OCNPolarity = TIM_OCNPolarity_High;  // gpio high = bottom fets on
+	TIM_OCInitStructure.TIM_OCNPolarity = TIM_OCNPolarity_High; // gpio high = bottom fets on
 #else
 	TIM_OCInitStructure.TIM_OCNPolarity = TIM_OCNPolarity_Low;
 #endif
 	TIM_OCInitStructure.TIM_OCNIdleState = TIM_OCNIdleState_Set;
-	
+
 	// Apply to OC1 till OC4 (Output compare, 1-3 used for PWM, 4 for ADC)
 	TIM_OC1Init(TIM1, &TIM_OCInitStructure);
 	TIM_OC2Init(TIM1, &TIM_OCInitStructure);
@@ -209,62 +230,64 @@ void mcpwm_dc_init(volatile mc_configuration *configuration){
 	// DMA2 → required for ADC multi-mode (CDR register is only on DMA2)
 	// These all live on the AHB1 bus.
 	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA2 |
-						RCC_AHB1Periph_GPIOA |
-						RCC_AHB1Periph_GPIOC, ENABLE);
+							   RCC_AHB1Periph_GPIOA |
+							   RCC_AHB1Periph_GPIOC,
+						   ENABLE);
 
 	// ADC1/2/3 live on the APB2 bus.
 	RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1 |
-						RCC_APB2Periph_ADC2 |
-						RCC_APB2Periph_ADC3, ENABLE);
+							   RCC_APB2Periph_ADC2 |
+							   RCC_APB2Periph_ADC3,
+						   ENABLE);
 
 	// --- Allocate DMA stream for ADC triple-mode ---
 	// DMA2 Stream 4, Channel 0 is the ONLY stream that can read ADC->CDR.
 	// Priority 5, ISR handler = mcpwm_adc_int_handler.
 	dmaStreamAllocate(STM32_DMA_STREAM(STM32_DMA_STREAM_ID(2, 4)),
-					5,
-					(stm32_dmaisr_t)mcpwm_adc_int_handler,
-					(void *)0);
+					  5,
+					  (stm32_dmaisr_t)mcpwm_adc_int_handler,
+					  (void *)0);
 
 	// --- DMA configuration for ADC triple-mode ---
 	// DMA reads from ADC->CDR (combined data register for ADC1+2+3)
 	// and writes into ADC_Value[] buffer.
-	DMA_InitStructure.DMA_Channel = DMA_Channel_0;                     // ADC triple-mode uses Channel 0
-	DMA_InitStructure.DMA_Memory0BaseAddr = (uint32_t)&ADC_Value;      // Destination buffer
-	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&ADC->CDR;    // Source = combined ADC data
-	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralToMemory;            // ADC → RAM
-	DMA_InitStructure.DMA_BufferSize = HW_ADC_CHANNELS;                // Number of samples per cycle
-	DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;   // CDR is a single register
-	DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;            // Increment buffer pointer
+	DMA_InitStructure.DMA_Channel = DMA_Channel_0;								// ADC triple-mode uses Channel 0
+	DMA_InitStructure.DMA_Memory0BaseAddr = (uint32_t)&ADC_Value;				// Destination buffer
+	DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&ADC->CDR;				// Source = combined ADC data
+	DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralToMemory;						// ADC → RAM
+	DMA_InitStructure.DMA_BufferSize = HW_ADC_CHANNELS;							// Number of samples per cycle
+	DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;			// CDR is a single register
+	DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;						// Increment buffer pointer
 	DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord; // 16-bit ADC values
 	DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;
-	DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;                    // Continuous sampling
-	DMA_InitStructure.DMA_Priority = DMA_Priority_High;                // ADC timing is critical
-	DMA_InitStructure.DMA_FIFOMode = DMA_FIFOMode_Disable;             // Direct mode
+	DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;		   // Continuous sampling
+	DMA_InitStructure.DMA_Priority = DMA_Priority_High;	   // ADC timing is critical
+	DMA_InitStructure.DMA_FIFOMode = DMA_FIFOMode_Disable; // Direct mode
 	DMA_InitStructure.DMA_FIFOThreshold = DMA_FIFOThreshold_1QuarterFull;
 	DMA_InitStructure.DMA_MemoryBurst = DMA_MemoryBurst_Single;
 	DMA_InitStructure.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
 
 	DMA_Init(DMA2_Stream4, &DMA_InitStructure);
-	DMA_Cmd(DMA2_Stream4, ENABLE);                                      // Start DMA
-	DMA_ITConfig(DMA2_Stream4, DMA_IT_TC, ENABLE);                      // Interrupt on buffer full
+	DMA_Cmd(DMA2_Stream4, ENABLE);				   // Start DMA
+	DMA_ITConfig(DMA2_Stream4, DMA_IT_TC, ENABLE); // Interrupt on buffer full
 
 	// --- ADC Common Init ---
 	// Triple regular simultaneous mode: ADC1, ADC2, ADC3 sample at the same time.
 	// Prescaler /2 → ADC clock = 42 MHz (slightly above datasheet max, but VESC uses it).
 	ADC_CommonInitStructure.ADC_Mode = ADC_TripleMode_RegSimult;
 	ADC_CommonInitStructure.ADC_Prescaler = ADC_Prescaler_Div2;
-	ADC_CommonInitStructure.ADC_DMAAccessMode = ADC_DMAAccessMode_1;    // 12+12+12 bits packed into CDR
+	ADC_CommonInitStructure.ADC_DMAAccessMode = ADC_DMAAccessMode_1; // 12+12+12 bits packed into CDR
 	ADC_CommonInitStructure.ADC_TwoSamplingDelay = ADC_TwoSamplingDelay_5Cycles;
 	ADC_CommonInit(&ADC_CommonInitStructure);
 
 	// --- ADC channel configuration (shared for ADC1/2/3) ---
-	ADC_InitStructure.ADC_Resolution = ADC_Resolution_12b;              // 0–4095
-	ADC_InitStructure.ADC_ScanConvMode = ENABLE;                        // Multiple channels
-	ADC_InitStructure.ADC_ContinuousConvMode = DISABLE;                 // Triggered by timer
+	ADC_InitStructure.ADC_Resolution = ADC_Resolution_12b; // 0–4095
+	ADC_InitStructure.ADC_ScanConvMode = ENABLE;		   // Multiple channels
+	ADC_InitStructure.ADC_ContinuousConvMode = DISABLE;	   // Triggered by timer
 	ADC_InitStructure.ADC_ExternalTrigConvEdge = ADC_ExternalTrigConvEdge_Falling;
 	ADC_InitStructure.ADC_ExternalTrigConv = ADC_ExternalTrigConv_T8_CC1; // TIM8 CC1 triggers ADC1
 	ADC_InitStructure.ADC_DataAlign = ADC_DataAlign_Right;
-	ADC_InitStructure.ADC_NbrOfConversion = HW_ADC_NBR_CONV;            // Number of regular channels
+	ADC_InitStructure.ADC_NbrOfConversion = HW_ADC_NBR_CONV; // Number of regular channels
 
 	// ADC1 uses external trigger
 	ADC_Init(ADC1, &ADC_InitStructure);
@@ -284,22 +307,22 @@ void mcpwm_dc_init(volatile mc_configuration *configuration){
 	// --- Injected channels (sampled at end of PWM cycle for current measurement) ---
 	ADC_ExternalTrigInjectedConvConfig(ADC1, ADC_ExternalTrigInjecConv_T1_CC4);
 	ADC_ExternalTrigInjectedConvConfig(ADC2, ADC_ExternalTrigInjecConv_T8_CC2);
-	#ifdef HW_HAS_3_SHUNTS
+#ifdef HW_HAS_3_SHUNTS
 	ADC_ExternalTrigInjectedConvConfig(ADC3, ADC_ExternalTrigInjecConv_T8_CC3);
-	#endif
+#endif
 
 	ADC_ExternalTrigInjectedConvEdgeConfig(ADC1, ADC_ExternalTrigInjecConvEdge_Falling);
 	ADC_ExternalTrigInjectedConvEdgeConfig(ADC2, ADC_ExternalTrigInjecConvEdge_Falling);
-	#ifdef HW_HAS_3_SHUNTS
+#ifdef HW_HAS_3_SHUNTS
 	ADC_ExternalTrigInjectedConvEdgeConfig(ADC3, ADC_ExternalTrigInjecConvEdge_Falling);
-	#endif
+#endif
 
 	// Injected sequence length = number of shunt currents
 	ADC_InjectedSequencerLengthConfig(ADC1, HW_ADC_INJ_CHANNELS);
 	ADC_InjectedSequencerLengthConfig(ADC2, HW_ADC_INJ_CHANNELS);
-	#ifdef HW_HAS_3_SHUNTS
+#ifdef HW_HAS_3_SHUNTS
 	ADC_InjectedSequencerLengthConfig(ADC3, HW_ADC_INJ_CHANNELS);
-	#endif
+#endif
 
 	// Configure the actual ADC channels (board-specific)
 	hw_setup_adc_channels();
@@ -318,7 +341,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration){
 
 	TIM_TimeBaseStructure.TIM_Prescaler = 0;
 	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-	TIM_TimeBaseStructure.TIM_Period = 0xFFFF;                          // Free-running counter
+	TIM_TimeBaseStructure.TIM_Period = 0xFFFF; // Free-running counter
 	TIM_TimeBaseStructure.TIM_ClockDivision = 0;
 	TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;
 	TIM_TimeBaseInit(TIM8, &TIM_TimeBaseStructure);
@@ -326,7 +349,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration){
 	// Configure CC1/2/3 as PWM outputs to generate ADC triggers
 	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
 	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
-	TIM_OCInitStructure.TIM_Pulse = 500;                                // Trigger timing
+	TIM_OCInitStructure.TIM_Pulse = 500; // Trigger timing
 	TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High;
 	TIM_OCInitStructure.TIM_OCNPolarity = TIM_OCNPolarity_High;
 	TIM_OCInitStructure.TIM_OCIdleState = TIM_OCIdleState_Set;
@@ -380,8 +403,10 @@ void mcpwm_dc_init(volatile mc_configuration *configuration){
 	init_done = true;
 }
 
-void mcpwm_dc_deinit(void){
-	if (!init_done){
+void mcpwm_dc_deinit(void)
+{
+	if (!init_done)
+	{
 		return;
 	}
 
@@ -391,11 +416,13 @@ void mcpwm_dc_deinit(void){
 	init_done = false;
 }
 
-void mcpwm_dc_init_done(void){
+void mcpwm_dc_init_done(void)
+{
 	return init_done;
 }
 
-void mcpwm_dc_set_configuration(volatile mc_configuration *configuration){
+void mcpwm_dc_set_configuration(volatile mc_configuration *configuration)
+{
 	utils_sys_lock_cnt();
 	conf = configuration;
 	utils_sys_unlock_cnt();
@@ -404,15 +431,18 @@ void mcpwm_dc_set_configuration(volatile mc_configuration *configuration){
 /**
  * Does the dc calculation. This is used to remove the voltage level when there is no current flowing
  */
-static void do_dc_cal(void) {
+static void do_dc_cal(void)
+{
 	DCCAL_ON();
 
 	// Wait max 5 seconds
 	int cnt = 0;
-	while(IS_DRV_FAULT()){
+	while (IS_DRV_FAULT())
+	{
 		chThdSleepMilliseconds(1);
 		cnt++;
-		if (cnt > 5000) {
+		if (cnt > 5000)
+		{
 			break;
 		}
 	};
@@ -426,7 +456,11 @@ static void do_dc_cal(void) {
 #endif
 
 	curr_start_samples = 0;
-	while(curr_start_samples < 4000) {};
+	// The currents are measured by mcpwm_adj_inj_int_handler and the timer is incremented
+	// each time measured (which is each PWM cycle). So this loop ends some time
+	while (curr_start_samples < 4000)
+	{
+	};
 	curr0_offset = curr0_sum / curr_start_samples;
 	curr1_offset = curr1_sum / curr_start_samples;
 
@@ -438,14 +472,339 @@ static void do_dc_cal(void) {
 	dccal_done = true;
 }
 
+// Functions used in mcpwm_adc_inj_int_handler
+static inline void read_currents_raw(float *c0, float *c1, float *c2)
+{
+	if (use_regular_adc)
+	{
+		*c0 = GET_CURRENT1();
+		*c1 = GET_CURRENT2();
+#ifdef HW_HAS_3_SHUNTS
+		*c2 = GET_CURRENT3();
+#endif
+	}
+	else
+	{
+		*c0 = HW_GET_INJ_CURR1();
+		*c1 = HW_GET_INJ_CURR2();
+#ifdef HW_HAS_3_SHUNTS
+		*c2 = HW_GET_INJ_CURR3();
+#endif
 
-static void set_duty_cycle_hl(float dutyCycle){
+#ifdef INVERTED_SHUNT_POLARITY
+		*c0 = 4095 - *c0;
+		*c1 = 4095 - *c1;
+#ifdef HW_HAS_3_SHUNTS
+		*c2 = 4095 - *c2;
+#endif
+#endif
+	}
+}
+
+void mcpwm_adc_inj_int_handler(void)
+{
+	uint32_t t_start = timer_time_now();
+
+	float curr0, curr1, curr2;
+
+	read_currents_raw(&curr0, &curr1, &curr2);
+
+	curr0_sum += curr0;
+	curr1_sum += curr1;
+#ifdef HW_HAS_3_SHUNTS
+	curr2_sum += curr2;
+#endif
+
+	curr_start_samples++;
+
+	curr0 -= curr0_offset;
+	curr1 -= curr1_offset;
+#ifdef HW_HAS_3_SHUNTS
+	curr2 -= curr2_offset;
+#endif
+
+	// Store raw ADC readings for raw sampling mode.
+	ADC_curr_raw[0] = curr0;
+	ADC_curr_raw[1] = curr1;
+#ifdef HW_HAS_3_SHUNTS
+	ADC_curr_raw[2] = curr2;
+#endif
+
+	// Scale to AMPs using calibrated scaling factors
+	curr0 *= FAC_CURRENT1;
+	curr1 *= FAC_CURRENT2;
+#ifdef HW_HAS_3_SHUNTS
+	curr2 *= FAC_CURRENT3;
+#else
+	int curr2 = -(curr0 + curr1);
+#endif
+
+	// Store the currents for sampling
+	ADC_curr_norm_value[0] = curr0;
+	ADC_curr_norm_value[1] = curr1;
+	ADC_curr_norm_value[2] = curr2;
+
+	float curr_tot_sample = 0;
+	if (direction)
+	{
+#ifdef HW_HAS_3_SHUNTS
+		curr_tot_sample = -(GET_CURRENT3() - curr2_offset) * FAC_CURRENT3;
+#else
+		curr_tot_sample = -(GET_CURRENT2() - curr1_offset) * FAC_CURRENT2;
+#endif
+	}
+	else
+	{
+		curr_tot_sample = -(GET_CURRENT1() - curr0_offset) * FAC_CURRENT1;
+	}
+
+	last_current_sample = curr_tot_sample;
+
+	// Filter out outliers
+	if (fabsf(last_current_sample) > (conf->l_abs_current_max * 1.2))
+	{
+		last_current_sample = SIGN(last_current_sample) * conf->l_abs_current_max * 1.2;
+	}
+
+	filter_add_sample((float *)current_fir_samples, last_current_sample,
+					  CURR_FIR_TAPS_BITS, (uint32_t *)&current_fir_index);
+	last_current_sample_filtered = filter_run_fir_iteration(
+		(float *)current_fir_samples, (float *)current_fir_coeffs,
+		CURR_FIR_TAPS_BITS, current_fir_index);
+
+	last_inj_adc_isr_duration = timer_seconds_elapsed_since(t_start);
+}
+
+/*
+ * New ADC samples ready in DMA. Do commutation!
+ */
+void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
+{
+	// Suppress unused parameter warnings
+	(void)p;
+	(void)flags;
+
+	// Time the execution time of the function
+	uint32_t t_start = timer_time_now();
+
+	// Update the timer if possible and needed
+	update_timer_attempt();
+
+	// Reset the watchdog
+	// TODO: Check if needed
+	// timeout_feed_WDT(THREAD_MCPWM);
+
+	const float input_voltage = GET_INPUT_VOLTAGE();
+
+	// Reset h_bridge_active if direction changed or motor stopped
+	static int direction_before = 1;
+	if (!(state == MC_STATE_RUNNING && direction == direction_before))
+	{
+		h_bridge_active = false;
+	}
+	direction_before = direction;
+
+	// --- DC motor section (amp=amplitude) ---
+	float motor_voltage_est = h_bridge_active
+								  ? dutycycle_now * (float)ADC_Value[ADC_IND_VIN_SENS]
+								  : ADC_V_L3 - ADC_V_L1; // BEMF differential before first commutation
+
+	filter_add_sample((float *)amp_fir_samples, motor_voltage_est,
+					  AMP_FIR_TAPS_BITS, (uint32_t *)&amp_fir_index);
+
+	if (state == MC_STATE_RUNNING && !h_bridge_active)
+	{
+		set_direction_hw(); // sets H-bridge direction pins
+	}
+
+	const float current_nofilter = mcpwm_get_tot_current();
+	const float current_in_nofilter = current_nofilter * fabsf(dutycycle_now);
+
+	// Only create new duty cycles if the motor is running
+	// and the FETs are configured correctly
+	if (state == MC_STATE_RUNNING && h_bridge_active)
+	{
+		// Compensation for supply voltage variations
+		const float voltage_scale = 20.0 / input_voltage;
+		float ramp_step = conf->m_duty_ramp_step / (switching_frequency_now / 1000.0);
+		float ramp_step_no_lim = ramp_step;
+
+		if (slow_ramping_cycles)
+		{
+			slow_ramping_cycles--;
+			ramp_step *= 0.1;
+		}
+
+		float dutycycle_now_tmp = dutycycle_now;
+
+#if BLDC_SPEED_CONTROL_CURRENT
+		if (control_mode == CONTROL_MODE_CURRENT ||
+			control_mode == CONTROL_MODE_POS ||
+			control_mode == CONTROL_MODE_SPEED)
+		{
+#else
+		if (control_mode == CONTROL_MODE_CURRENT || control_mode == CONTROL_MODE_POS)
+		{
+#endif
+			// Compute error
+			const float error = current_set - (direction ? current_nofilter : -current_nofilter);
+			float step = error * conf->cc_gain * voltage_scale;
+			const float start_boost = conf->cc_startup_boost_duty * voltage_scale;
+
+			// Do not ramp too much
+			utils_truncate_number(&step, -conf->cc_ramp_step_max, conf->cc_ramp_step_max);
+
+			// Switching frequency correction
+			step /= switching_frequency_now / 1000.0;
+
+			if (slow_ramping_cycles)
+			{
+				slow_ramping_cycles--;
+				step *= 0.1;
+			}
+
+			// Optionally apply startup boost.
+			if (fabsf(dutycycle_now_tmp) < start_boost)
+			{
+				utils_step_towards(&dutycycle_now_tmp,
+								   current_set > 0.0 ? start_boost : -start_boost, ramp_step);
+			}
+			else
+			{
+				dutycycle_now_tmp += step;
+			}
+
+			// Upper truncation
+			utils_truncate_number((float *)&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
+
+			// Lower truncation
+			if (fabsf(dutycycle_now_tmp) < conf->l_min_duty)
+			{
+				if (dutycycle_now_tmp < 0.0 && current_set > 0.0)
+				{
+					dutycycle_now_tmp = conf->l_min_duty;
+				}
+				else if (dutycycle_now_tmp > 0.0 && current_set < 0.0)
+				{
+					dutycycle_now_tmp = -conf->l_min_duty;
+				}
+			}
+
+			// The set dutycycle should be in the correct direction in case the output is lower
+			// than the minimum duty cycle and the mechanism below gets activated.
+			dutycycle_set = dutycycle_now_tmp >= 0.0 ? conf->l_min_duty : -conf->l_min_duty;
+		}
+		else if (control_mode == CONTROL_MODE_CURRENT_BRAKE)
+		{
+			// Compute error
+			const float error = -fabsf(current_set) - current_nofilter;
+			float step = error * conf->cc_gain * voltage_scale;
+
+			// Do not ramp too much
+			utils_truncate_number(&step, -conf->cc_ramp_step_max, conf->cc_ramp_step_max);
+
+			// Switching frequency correction
+			step /= switching_frequency_now / 1000.0;
+
+			if (slow_ramping_cycles)
+			{
+				slow_ramping_cycles--;
+				step *= 0.1;
+			}
+
+			dutycycle_now_tmp += SIGN(dutycycle_now_tmp) * step;
+
+			// Upper truncation
+			utils_truncate_number((float *)&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
+
+			// Lower truncation
+			if (fabsf(dutycycle_now_tmp) < conf->l_min_duty)
+			{
+				if (fabsf(rpm_now) < conf->l_max_erpm_fbrake_cc)
+				{
+					dutycycle_now_tmp = 0.0;
+					dutycycle_set = dutycycle_now_tmp;
+				}
+				else
+				{
+					dutycycle_now_tmp = SIGN(dutycycle_now_tmp) * conf->l_min_duty;
+					dutycycle_set = dutycycle_now_tmp;
+				}
+			}
+		}
+		else
+		{
+			utils_step_towards((float *)&dutycycle_now_tmp, dutycycle_set, ramp_step);
+		}
+
+		static int limit_delay = 0;
+
+		// Apply limits in priority order
+		if (current_nofilter > conf->lo_current_max)
+		{
+			utils_step_towards((float *)&dutycycle_now, 0.0,
+							   ramp_step_no_lim * fabsf(current_nofilter - conf->lo_current_max) * conf->m_current_backoff_gain);
+			limit_delay = 1;
+		}
+		else if (current_nofilter < conf->lo_current_min)
+		{
+			utils_step_towards((float *)&dutycycle_now, direction ? conf->l_max_duty : -conf->l_max_duty,
+							   ramp_step_no_lim * fabsf(current_nofilter - conf->lo_current_min) * conf->m_current_backoff_gain);
+			limit_delay = 1;
+		}
+		else if (current_in_nofilter > conf->lo_in_current_max)
+		{
+			utils_step_towards((float *)&dutycycle_now, 0.0,
+							   ramp_step_no_lim * fabsf(current_in_nofilter - conf->lo_in_current_max) * conf->m_current_backoff_gain);
+			limit_delay = 1;
+		}
+		else if (current_in_nofilter < conf->lo_in_current_min)
+		{
+			utils_step_towards((float *)&dutycycle_now, direction ? conf->l_max_duty : -conf->l_max_duty,
+							   ramp_step_no_lim * fabsf(current_in_nofilter - conf->lo_in_current_min) * conf->m_current_backoff_gain);
+			limit_delay = 1;
+		}
+
+		if (limit_delay > 0)
+		{
+			limit_delay--;
+		}
+		else
+		{
+			dutycycle_now = dutycycle_now_tmp;
+		}
+
+		// When the set duty cycle is in the opposite direction, make sure that the motor
+		// starts again after stopping completely
+		if (fabsf(dutycycle_now) < conf->l_min_duty)
+		{
+			if (dutycycle_set >= conf->l_min_duty)
+			{
+				dutycycle_now = conf->l_min_duty;
+			}
+			else if (dutycycle_set <= -conf->l_min_duty)
+			{
+				dutycycle_now = -conf->l_min_duty;
+			}
+		}
+
+		set_duty_cycle_ll(dutycycle_now);
+	}
+
+	mc_interface_mc_timer_isr(false);
+
+	last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
+}
+
+static void set_duty_cycle_hl(float dutyCycle)
+{
 	utils_truncate_number(&dutyCycle, -conf->l_max_duty, conf->l_max_duty);
 
 	dutycycle_set = dutyCycle;
 }
 static void set_duty_cycle_ll(float dutyCycle);
-static void set_duty_cycle_hw(float dutyCycle){
+static void set_duty_cycle_hw(float dutyCycle)
+{
 	mc_timer_struct timer_tmp;
 
 	utils_sys_lock_cnt();
@@ -461,7 +820,8 @@ static void set_duty_cycle_hw(float dutyCycle){
 	set_next_timer_settings(&timer_tmp);
 }
 
-static void update_adc_sample_pos(mc_timer_struct *timer_tmp) {
+static void update_adc_sample_pos(mc_timer_struct *timer_tmp)
+{
 	volatile uint32_t duty = timer_tmp->duty_motor;
 	volatile uint32_t top = timer_tmp->top;
 	volatile uint32_t val_sample = timer_tmp->val_sample;
@@ -472,11 +832,10 @@ static void update_adc_sample_pos(mc_timer_struct *timer_tmp) {
 	volatile uint32_t curr3_sample = timer_tmp->curr3_sample;
 #endif
 
-	if (duty > (uint32_t)((float)top * conf->l_max_duty)) {
+	if (duty > (uint32_t)((float)top * conf->l_max_duty))
+	{
 		duty = (uint32_t)((float)top * conf->l_max_duty);
 	}
-
-	curr_samp_volt = 0;
 
 	curr1_sample = top - 10; // Not used anyway
 	curr2_sample = top - 10;
@@ -484,11 +843,15 @@ static void update_adc_sample_pos(mc_timer_struct *timer_tmp) {
 	curr3_sample = top - 10;
 #endif
 
-	if (duty > 1000) {
+	if (duty > 1000)
+	{
 		val_sample = duty / 2;
-	} else {
+		use_regular_adc = false;
+	}
+	else
+	{
 		val_sample = duty + 800;
-		curr_samp_volt = (1 << 0) | (1 << 1) | (1 << 2);
+		use_regular_adc = true;
 	}
 
 	timer_tmp->val_sample = val_sample;
@@ -499,7 +862,8 @@ static void update_adc_sample_pos(mc_timer_struct *timer_tmp) {
 #endif
 }
 
-static void set_next_timer_settings(mc_timer_struct *settings) {
+static void set_next_timer_settings(mc_timer_struct *settings)
+{
 	utils_sys_lock_cnt();
 	timer_struct = *settings;
 	timer_struct.updated = false;
@@ -508,11 +872,13 @@ static void set_next_timer_settings(mc_timer_struct *settings) {
 	update_timer_attempt();
 }
 
-static void update_timer_attempt(void) {
+static void update_timer_attempt(void)
+{
 	utils_sys_lock_cnt();
 
 	// Set the next timer settings if an update is far enough away
-	if (!timer_struct.updated && TIM1->CNT > 10 && TIM1->CNT < (TIM1->ARR - 500)) {
+	if (!timer_struct.updated && TIM1->CNT > 10 && TIM1->CNT < (TIM1->ARR - 500))
+	{
 		// Disable preload register updates
 		TIM1->CR1 |= TIM_CR1_UDIS;
 		// TIM8->CR1 |= TIM_CR1_UDIS;
@@ -520,9 +886,12 @@ static void update_timer_attempt(void) {
 		// Set the new configuration
 		TIM1->ARR = timer_struct.top;
 		TIM1->CCR1 = timer_struct.duty_motor;
-		if (conf->dc_enable_parking_brake){
+		if (conf->dc_enable_parking_brake)
+		{
 			TIM1->CCR2 = timer_struct.duty_brake;
-		} else {
+		}
+		else
+		{
 			TIM1->CCR2 = timer_struct.duty_motor;
 		}
 		TIM1->CCR3 = timer_struct.duty_motor;
@@ -545,15 +914,18 @@ static void update_timer_attempt(void) {
 /**
  * Switch off all FETs.
  */
-void mcpwm_dc_stop_pwm(void){
+void mcpwm_dc_stop_pwm(void)
+{
 	control_mode = CONTROL_MODE_NONE;
 	stop_pwm_ll();
 }
-static void stop_pwm_ll(void){
+static void stop_pwm_ll(void)
+{
 	state = MC_STATE_OFF;
 	stop_pwm_hw();
 }
-static void stop_pwm_hw(void){
+static void stop_pwm_hw(void)
+{
 #ifdef HW_HAS_DRV8313
 	DISABLE_BR();
 #endif
@@ -575,6 +947,56 @@ static void stop_pwm_hw(void){
 	set_switching_frequency(conf->m_bldc_f_sw_max);
 }
 
+/**
+ * Sets the direction of the motor by enabling or disabling pins
+ */
+static void set_direction_hw(void)
+{
+	if (!conf->dc_enable_parking_brake)
+	{
+		// 0
+		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_OCMode_Inactive);
+		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
+	}
+
+	if (direction)
+	{
+		// +
+		TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_OCMode_PWM1);
+		TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
+
+		// -
+		TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_OCMode_Inactive);
+		TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Enable);
+	}
+	else
+	{
+		// +
+		TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_OCMode_PWM1);
+		TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Enable);
+
+		// -
+		TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_OCMode_Inactive);
+		TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
+	}
+
+	TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
+	h_bridge_active = true;
+
+	mc_timer_struct timer_tmp;
+
+	utils_sys_lock_cnt();
+	timer_tmp = timer_struct;
+	utils_sys_unlock_cnt();
+
+	update_adc_sample_pos(&timer_tmp);
+	set_next_timer_settings(&timer_tmp);
+}
 
 /**
  * Easy setters. Sets the target values for control loops
@@ -587,8 +1009,10 @@ static void stop_pwm_hw(void){
  * @param current
  * The current to use. Positive and negative values give the same effect.
  */
-void mcpwm_set_brake_current(float current) {
-	if (fabsf(current) < conf->cc_min_current) {
+void mcpwm_set_brake_current(float current)
+{
+	if (fabsf(current) < conf->cc_min_current)
+	{
 		control_mode = CONTROL_MODE_NONE;
 		stop_pwm_ll();
 		return;
@@ -599,19 +1023,29 @@ void mcpwm_set_brake_current(float current) {
 	control_mode = CONTROL_MODE_CURRENT_BRAKE;
 	current_set = current;
 
-	if (state != MC_STATE_RUNNING && state != MC_STATE_FULL_BRAKE) {
+	if (state != MC_STATE_RUNNING && state != MC_STATE_FULL_BRAKE)
+	{
 		// In case the motor is already spinning, set the state to running
 		// so that it can be ramped down before the full brake is applied.
-		if (conf->motor_type == MOTOR_TYPE_DC) {
-			if (fabsf(dutycycle_now) > 0.1) {
+		if (conf->motor_type == MOTOR_TYPE_DC)
+		{
+			if (fabsf(dutycycle_now) > 0.1)
+			{
 				state = MC_STATE_RUNNING;
-			} else {
+			}
+			else
+			{
 				full_brake_ll();
 			}
-		} else {
-			if (fabsf(rpm_now) > conf->l_max_erpm_fbrake) {
+		}
+		else
+		{
+			if (fabsf(rpm_now) > conf->l_max_erpm_fbrake)
+			{
 				state = MC_STATE_RUNNING;
-			} else {
+			}
+			else
+			{
 				full_brake_ll();
 			}
 		}
@@ -625,20 +1059,23 @@ void mcpwm_set_brake_current(float current) {
  * @param current
  * The current to use.
  */
-void mcpwm_set_current(float current) {
-	if (fabsf(current) < conf->cc_min_current) {
+void mcpwm_set_current(float current)
+{
+	if (fabsf(current) < conf->cc_min_current)
+	{
 		control_mode = CONTROL_MODE_NONE;
 		stop_pwm_ll();
 		return;
 	}
 
 	utils_truncate_number(&current, -conf->l_current_max * conf->l_current_max_scale,
-			conf->l_current_max * conf->l_current_max_scale);
+						  conf->l_current_max * conf->l_current_max_scale);
 
 	control_mode = CONTROL_MODE_CURRENT;
 	current_set = current;
 
-	if (state != MC_STATE_RUNNING) {
+	if (state != MC_STATE_RUNNING)
+	{
 		set_duty_cycle_hl(SIGN(current) * conf->l_min_duty);
 	}
 }
@@ -650,12 +1087,14 @@ void mcpwm_set_current(float current) {
  * @param dutyCycle
  * The duty cycle to use.
  */
-void mcpwm_dc_set_duty(float dutyCycle){
+void mcpwm_dc_set_duty(float dutyCycle)
+{
 	control_mode = CONTROL_MODE_DUTY;
 	set_duty_cycle_hl(dutyCycle);
 }
 
-void mcpwm_dc_set_duty_noramp(float dutyCycle){
+void mcpwm_dc_set_duty_noramp(float dutyCycle)
+{
 	// TODO: Implement this
 }
 
@@ -666,16 +1105,19 @@ void mcpwm_dc_set_duty_noramp(float dutyCycle){
  * @param rpm
  * The electrical RPM goal value to use.
  */
-void mcpwm_set_pid_speed(float rpm) {
+void mcpwm_set_pid_speed(float rpm)
+{
 	control_mode = CONTROL_MODE_SPEED;
 	speed_pid_set_rpm = rpm;
 }
 
-void mcpwm_dc_set_pid_pos(float pos){
+void mcpwm_dc_set_pid_pos(float pos)
+{
 	// Not supported, so ignore
 }
 
-int mcpwm_dc_set_tachometer_value(int steps){
+int mcpwm_dc_set_tachometer_value(int steps)
+{
 	// Not supported, so ignore
 	return 0;
 }
@@ -683,38 +1125,46 @@ int mcpwm_dc_set_tachometer_value(int steps){
 /**
  * Easy getters. Get target values for control loops or real values.
  */
-float mcpwm_dc_get_duty_cycle_set(void){
+float mcpwm_dc_get_duty_cycle_set(void)
+{
 	return dutycycle_set;
 }
 
-float mcpwm_dc_get_duty_cycle_now(void){
+float mcpwm_dc_get_duty_cycle_now(void)
+{
 	return dutycycle_now;
 }
 
-float mcpwm_dc_get_last_adc_isr_duration(void){
+float mcpwm_dc_get_last_adc_isr_duration(void)
+{
 	return last_adc_isr_duration;
 }
 
-float mcpwm_dc_get_rpm(void){
+float mcpwm_dc_get_rpm(void)
+{
 	// TODO: return the current RPM. However, speed control is not implemented yet
 	// Not supported yet
 	return 0.0;
 }
 
-mc_state mcpwm_dc_get_state(void){
+mc_state mcpwm_dc_get_state(void)
+{
 	return state;
 }
 
-float mcpwm_dc_get_switching_frequency_now(void){
+float mcpwm_dc_get_switching_frequency_now(void)
+{
 	return switching_frequency_now;
 }
 
-int mcpwm_dc_get_tachometer_value(bool reset){
+int mcpwm_dc_get_tachometer_value(bool reset)
+{
 	// Not supported
 	return 0;
 }
 
-int mcpwm_dc_get_tachometer_abs_value(bool reset){
+int mcpwm_dc_get_tachometer_abs_value(bool reset)
+{
 	// Not supported
 	return 0;
 }
@@ -727,7 +1177,8 @@ int mcpwm_dc_get_tachometer_abs_value(bool reset){
  * @return
  * The motor current.
  */
-float mcpwm_get_tot_current(void) {
+float mcpwm_get_tot_current(void)
+{
 	return last_current_sample;
 }
 
@@ -739,7 +1190,8 @@ float mcpwm_get_tot_current(void) {
  * @return
  * The filtered motor current.
  */
-float mcpwm_get_tot_current_filtered(void) {
+float mcpwm_get_tot_current_filtered(void)
+{
 	return last_current_sample_filtered;
 }
 
@@ -750,7 +1202,8 @@ float mcpwm_get_tot_current_filtered(void) {
  * @return
  * The motor current.
  */
-float mcpwm_get_tot_current_directional(void) {
+float mcpwm_get_tot_current_directional(void)
+{
 	const float retval = mcpwm_get_tot_current();
 	return dutycycle_now > 0.0 ? retval : -retval;
 }
@@ -762,7 +1215,8 @@ float mcpwm_get_tot_current_directional(void) {
  * @return
  * The filtered motor current.
  */
-float mcpwm_get_tot_current_directional_filtered(void) {
+float mcpwm_get_tot_current_directional_filtered(void)
+{
 	const float retval = mcpwm_get_tot_current_filtered();
 	return dutycycle_now > 0.0 ? retval : -retval;
 }
@@ -774,7 +1228,8 @@ float mcpwm_get_tot_current_directional_filtered(void) {
  * @return
  * The filtered motor current.
  */
-float mcpwm_get_tot_current_directional_filtered(void) {
+float mcpwm_get_tot_current_directional_filtered(void)
+{
 	const float retval = mcpwm_get_tot_current_filtered();
 	return dutycycle_now > 0.0 ? retval : -retval;
 }
@@ -785,7 +1240,8 @@ float mcpwm_get_tot_current_directional_filtered(void) {
  * @return
  * The input current.
  */
-float mcpwm_get_tot_current_in(void) {
+float mcpwm_get_tot_current_in(void)
+{
 	return mcpwm_get_tot_current() * fabsf(dutycycle_now);
 }
 
@@ -795,6 +1251,7 @@ float mcpwm_get_tot_current_in(void) {
  * @return
  * The filtered input current.
  */
-float mcpwm_get_tot_current_in_filtered(void) {
+float mcpwm_get_tot_current_in_filtered(void)
+{
 	return mcpwm_get_tot_current_filtered() * fabsf(dutycycle_now);
 }
