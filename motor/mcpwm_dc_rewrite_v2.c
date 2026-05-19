@@ -418,7 +418,7 @@ void mcpwm_dc_deinit(void)
 	init_done = false;
 }
 
-void mcpwm_dc_init_done(void)
+bool mcpwm_dc_init_done(void)
 {
 	return init_done;
 }
@@ -538,7 +538,7 @@ void mcpwm_adc_inj_int_handler(void)
 #ifdef HW_HAS_3_SHUNTS
 	curr2 *= FAC_CURRENT3;
 #else
-	int curr2 = -(curr0 + curr1);
+	curr2 = -(curr0 + curr1);
 #endif
 
 	// Store the currents for sampling
@@ -912,7 +912,7 @@ static void update_timer_attempt(void)
 	{
 		// Disable preload register updates
 		TIM1->CR1 |= TIM_CR1_UDIS;
-		// TIM8->CR1 |= TIM_CR1_UDIS;
+		TIM8->CR1 |= TIM_CR1_UDIS;
 
 		// Set the new configuration
 		TIM1->ARR = timer_struct.top;
@@ -926,16 +926,16 @@ static void update_timer_attempt(void)
 			TIM1->CCR2 = timer_struct.duty_motor;
 		}
 		TIM1->CCR3 = timer_struct.duty_motor;
-		// TIM8->CCR1 = timer_struct.val_sample;
 		TIM1->CCR4 = timer_struct.curr1_sample;
-		// TIM8->CCR2 = timer_struct.curr2_sample;
+		TIM8->CCR1 = timer_struct.val_sample;
+		TIM8->CCR2 = timer_struct.curr2_sample;
 #ifdef HW_HAS_3_SHUNTS
-		// TIM8->CCR3 = timer_struct.curr3_sample;
+		TIM8->CCR3 = timer_struct.curr3_sample;
 #endif
 
 		// Enables preload register updates
 		TIM1->CR1 &= ~TIM_CR1_UDIS;
-		// TIM8->CR1 &= ~TIM_CR1_UDIS;
+		TIM8->CR1 &= ~TIM_CR1_UDIS;
 		timer_struct.updated = true;
 	}
 
@@ -1236,19 +1236,6 @@ float mcpwm_get_tot_current_filtered(void)
 float mcpwm_get_tot_current_directional(void)
 {
 	const float retval = mcpwm_get_tot_current();
-	return dutycycle_now > 0.0 ? retval : -retval;
-}
-
-/**
- * Get the filtered motor current. The sign of this value represents the
- * direction in which the motor generates torque.
- *
- * @return
- * The filtered motor current.
- */
-float mcpwm_get_tot_current_directional_filtered(void)
-{
-	const float retval = mcpwm_get_tot_current_filtered();
 	return dutycycle_now > 0.0 ? retval : -retval;
 }
 
