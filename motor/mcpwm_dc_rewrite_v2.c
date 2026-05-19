@@ -15,6 +15,8 @@
 
 	You should have received a copy of the GNU General Public License
 	along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+	Motor controller for DC brushed motors.
 	*/
 
 #include "ch.h"
@@ -117,9 +119,9 @@ static volatile float amp_fir_samples[AMP_FIR_LEN];
 static volatile int amp_fir_index = 0;
 
 // Private functions
-static void set_duty_cycle_hl(float dutyCycle);
-static void set_duty_cycle_ll(float dutyCycle);
-static void set_duty_cycle_hw(float dutyCycle);
+static void set_duty_cycle_hl(float dutycycle);
+static void set_duty_cycle_ll(float dutycycle);
+static void set_duty_cycle_hw(float dutycycle);
 static void stop_pwm_ll(void);
 static void stop_pwm_hw(void);
 static void do_dc_cal(void);
@@ -796,14 +798,43 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 	last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
 }
 
-static void set_duty_cycle_hl(float dutyCycle)
+static void set_duty_cycle_hl(float dutycycle)
 {
-	utils_truncate_number(&dutyCycle, -conf->l_max_duty, conf->l_max_duty);
+	utils_truncate_number(&dutycycle, -conf->l_max_duty, conf->l_max_duty);
 
-	dutycycle_set = dutyCycle;
+	dutycycle_set = dutycycle;
 }
-static void set_duty_cycle_ll(float dutyCycle);
-static void set_duty_cycle_hw(float dutyCycle)
+
+static void set_duty_cycle_ll(float dutycycle)
+{
+	// Determine the direction
+	float dutycycle_abs = fabsf(dutycycle);
+	if (dutycycle_abs >= conf->l_min_duty){
+		direction = signbit(dutycycle) == 0 ? 1 : 0;
+	}
+
+	// Braking condition
+	if (dutycycle_abs < conf->l_min_duty)
+	{
+		// NOTE: Contained checks for maximum speed of motor
+		// Removed those because there is no encoder, but could be restored
+		full_brake_ll();
+		return;
+	}
+	
+	// Clamp the duty cycle
+	if (dutycycle_abs > conf->l_max_duty)
+	{
+		dutycycle_abs = conf->l_max_duty;
+	}
+
+	// Apply
+	set_duty_cycle_hw(dutycycle_abs);
+	state = MC_STATE_RUNNING;
+	set_direction_hw();
+}
+
+static void set_duty_cycle_hw(float dutycycle)
 {
 	mc_timer_struct timer_tmp;
 
@@ -811,11 +842,11 @@ static void set_duty_cycle_hw(float dutyCycle)
 	timer_tmp = timer_struct;
 	utils_sys_unlock_cnt();
 
-	utils_truncate_number(&dutyCycle, conf->l_min_duty, conf->l_max_duty);
+	utils_truncate_number(&dutycycle, conf->l_min_duty, conf->l_max_duty);
 
 	switching_frequency_now = conf->m_dc_f_sw;
 	timer_tmp.top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
-	timer_tmp.duty_motor = (uint16_t)((float)timer_tmp.top * dutyCycle);
+	timer_tmp.duty_motor = (uint16_t)((float)timer_tmp.top * dutycycle);
 
 	set_next_timer_settings(&timer_tmp);
 }
@@ -1084,16 +1115,16 @@ void mcpwm_set_current(float current)
  * Use duty cycle control. Absolute values less than MCPWM_MIN_DUTY_CYCLE will
  * stop the motor.
  *
- * @param dutyCycle
+ * @param dutycycle
  * The duty cycle to use.
  */
-void mcpwm_dc_set_duty(float dutyCycle)
+void mcpwm_dc_set_duty(float dutycycle)
 {
 	control_mode = CONTROL_MODE_DUTY;
-	set_duty_cycle_hl(dutyCycle);
+	set_duty_cycle_hl(dutycycle);
 }
 
-void mcpwm_dc_set_duty_noramp(float dutyCycle)
+void mcpwm_dc_set_duty_noramp(float dutycycle)
 {
 	// TODO: Implement this
 }
