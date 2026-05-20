@@ -22,6 +22,7 @@
 
 #include "mc_interface.h"
 #include "mcpwm.h"
+#include "mcpwm_dc.h"
 #include "mcpwm_foc.h"
 #include "ledpwm.h"
 #include "stm32f4xx_conf.h"
@@ -234,21 +235,24 @@ void mc_interface_init(void) {
 
 	// Initialize selected implementation
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_init(&motor_now()->m_conf);
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_init(&motor_now()->m_conf);
+			break;
 
-	case MOTOR_TYPE_FOC:
-#ifdef HW_HAS_DUAL_MOTORS
-		mcpwm_foc_init((mc_configuration*)&m_motor_1.m_conf, (mc_configuration*)&m_motor_2.m_conf);
-#else
-		mcpwm_foc_init((mc_configuration*)&m_motor_1.m_conf, (mc_configuration*)&m_motor_1.m_conf);
-#endif
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_init(&motor_now()->m_conf);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+	#ifdef HW_HAS_DUAL_MOTORS
+			mcpwm_foc_init((mc_configuration*)&m_motor_1.m_conf, (mc_configuration*)&m_motor_2.m_conf);
+	#else
+			mcpwm_foc_init((mc_configuration*)&m_motor_1.m_conf, (mc_configuration*)&m_motor_1.m_conf);
+	#endif
+			break;
+
+		default:
+			break;
 	}
 
 	bms_init((bms_config*)&m_motor_1.m_conf.bms);
@@ -369,8 +373,11 @@ void mc_interface_set_configuration(mc_configuration *configuration) {
 
 		switch (motor->m_conf.motor_type) {
 		case MOTOR_TYPE_BLDC:
-		case MOTOR_TYPE_DC:
 			mcpwm_init(&motor->m_conf);
+			break;
+
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_init(&motor->m_conf);
 			break;
 
 		case MOTOR_TYPE_FOC:
@@ -391,26 +398,29 @@ void mc_interface_set_configuration(mc_configuration *configuration) {
 	update_override_limits(motor, &motor->m_conf);
 
 	switch (motor->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_set_configuration(&motor->m_conf);
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_set_configuration(&motor->m_conf);
+			break;
 
-	case MOTOR_TYPE_FOC:
-#ifdef HW_HAS_DUAL_MOTORS
-		if (motor == &m_motor_1) {
-			m_motor_2.m_conf.foc_f_zv = motor->m_conf.foc_f_zv;
-			m_motor_2.m_conf.motor_type = motor->m_conf.motor_type;
-		} else {
-			m_motor_1.m_conf.foc_f_zv = motor->m_conf.foc_f_zv;
-			m_motor_1.m_conf.motor_type = motor->m_conf.motor_type;
-		}
-#endif
-		mcpwm_foc_set_configuration((mc_configuration*)&motor->m_conf);
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_set_configuration(&motor->m_conf);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+	#ifdef HW_HAS_DUAL_MOTORS
+			if (motor == &m_motor_1) {
+				m_motor_2.m_conf.foc_f_zv = motor->m_conf.foc_f_zv;
+				m_motor_2.m_conf.motor_type = motor->m_conf.motor_type;
+			} else {
+				m_motor_1.m_conf.foc_f_zv = motor->m_conf.foc_f_zv;
+				m_motor_1.m_conf.motor_type = motor->m_conf.motor_type;
+			}
+	#endif
+			mcpwm_foc_set_configuration((mc_configuration*)&motor->m_conf);
+			break;
+
+		default:
+			break;
 	}
 
 	bms_init(&configuration->bms);
@@ -419,17 +429,20 @@ void mc_interface_set_configuration(mc_configuration *configuration) {
 bool mc_interface_dccal_done(void) {
 	bool ret = false;
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_is_dccal_done();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_is_dccal_done();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_is_dccal_done();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_is_dccal_done();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_is_dccal_done();
+			break;
+
+		default:
+			break;
 	}
 
 	return ret;
@@ -512,17 +525,20 @@ const char* mc_interface_fault_to_string(mc_fault_code fault) {
 mc_state mc_interface_get_state(void) {
 	mc_state ret = MC_STATE_OFF;
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_state();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_state();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_state();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_state();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_state();
+			break;
+
+		default:
+			break;
 	}
 
 	return ret;
@@ -551,17 +567,20 @@ void mc_interface_set_duty(float dutyCycle) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_set_duty(DIR_MULT * dutyCycle);
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_set_duty(DIR_MULT * dutyCycle);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_duty(DIR_MULT * dutyCycle);
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_set_duty(DIR_MULT * dutyCycle);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_duty(DIR_MULT * dutyCycle);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_duty", dutyCycle);
@@ -577,17 +596,20 @@ void mc_interface_set_duty_noramp(float dutyCycle) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_set_duty_noramp(DIR_MULT * dutyCycle);
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_set_duty_noramp(DIR_MULT * dutyCycle);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_duty_noramp(DIR_MULT * dutyCycle);
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_set_duty_noramp(DIR_MULT * dutyCycle);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_duty_noramp(DIR_MULT * dutyCycle);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_duty_noramp", dutyCycle);
@@ -603,17 +625,20 @@ void mc_interface_set_pid_speed(float rpm) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_set_pid_speed(DIR_MULT * rpm);
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_set_pid_speed(DIR_MULT * rpm);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_pid_speed(DIR_MULT * rpm);
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_set_pid_speed(DIR_MULT * rpm);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_pid_speed(DIR_MULT * rpm);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_pid_speed", rpm);
@@ -642,17 +667,20 @@ void mc_interface_set_pid_pos(float pos) {
 	utils_norm_angle(&pos);
 
 	switch (conf->motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_set_pid_pos(pos);
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_set_pid_pos(pos);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_pid_pos(pos);
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_set_pid_pos(pos);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_pid_pos(pos);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_pid_pos", pos);
@@ -668,17 +696,20 @@ void mc_interface_set_current(float current) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_set_current(DIR_MULT * current);
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_set_current(DIR_MULT * current);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_current(DIR_MULT * current);
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_set_current(DIR_MULT * current);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_current(DIR_MULT * current);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_current", current);
@@ -694,17 +725,20 @@ void mc_interface_set_brake_current(float current) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_set_brake_current(DIR_MULT * current);
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_set_brake_current(DIR_MULT * current);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_brake_current(DIR_MULT * current);
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_set_brake_current(DIR_MULT * current);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_brake_current(DIR_MULT * current);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_current_brake", current);
@@ -770,18 +804,22 @@ void mc_interface_set_handbrake(float current) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		// TODO: Not implemented yet, use brake mode for now.
-		mcpwm_set_brake_current(current);
-		break;
+		case MOTOR_TYPE_DC:
+			// TODO: Not implemented yet, use brake mode for now.
+			mcpwm_dc_set_brake_current(current);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_handbrake(current);
-		break;
+		case MOTOR_TYPE_BLDC:
+			// TODO: Not implemented yet, use brake mode for now.
+			mcpwm_set_brake_current(current);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_handbrake(current);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_handbrake", current);
@@ -811,16 +849,18 @@ void mc_interface_set_openloop_current(float current, float rpm) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		break;
+		case MOTOR_TYPE_DC:
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_openloop_current(current, DIR_MULT * rpm);
-		break;
+		case MOTOR_TYPE_BLDC:
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_openloop_current(current, DIR_MULT * rpm);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_openloop_current", current);
@@ -835,16 +875,18 @@ void mc_interface_set_openloop_phase(float current, float phase){
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		break;
+		case MOTOR_TYPE_DC:
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_openloop_phase(current, DIR_MULT * phase);
-		break;
+		case MOTOR_TYPE_BLDC:
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_openloop_phase(current, DIR_MULT * phase);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_openloop_phase", phase);
@@ -859,16 +901,18 @@ void mc_interface_set_openloop_duty(float dutyCycle, float rpm){
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		break;
+		case MOTOR_TYPE_DC:
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_openloop_duty(dutyCycle, DIR_MULT * rpm);
-		break;
+		case MOTOR_TYPE_BLDC:
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_openloop_duty(dutyCycle, DIR_MULT * rpm);
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_openloop_duty", dutyCycle);
@@ -883,16 +927,18 @@ void mc_interface_set_openloop_duty_phase(float dutyCycle, float phase){
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		break;
+		case MOTOR_TYPE_DC:
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_openloop_duty_phase(dutyCycle, phase); // Should this use DIR_MULT?
-		break;
+		case MOTOR_TYPE_BLDC:
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_openloop_duty_phase(dutyCycle, phase); // Should this use DIR_MULT?
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("set_openloop_duty_phase", phase);
@@ -913,17 +959,20 @@ void mc_interface_release_motor(void) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_release_motor();
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_release_motor();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_release_motor();
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_release_motor();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_release_motor();
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("release_motor", 0.0);
@@ -931,17 +980,20 @@ void mc_interface_release_motor(void) {
 
 void mc_interface_release_motor_override(void) {
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_release_motor();
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_release_motor();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_release_motor();
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_release_motor();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_release_motor();
+			break;
+
+		default:
+			break;
 	}
 
 	events_add("release_motor_override", 0.0);
@@ -952,31 +1004,41 @@ bool mc_interface_wait_for_motor_release(float timeout) {
 	bool res = false;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		while (UTILS_AGE_S(time_start) < timeout) {
-			if (mcpwm_get_state() == MC_STATE_OFF) {
-				res = true;
-				break;
+		case MOTOR_TYPE_DC:
+			while (UTILS_AGE_S(time_start) < timeout) {
+				if (mcpwm_dc_get_state() == MC_STATE_OFF) {
+					res = true;
+					break;
+				}
+
+				chThdSleepMilliseconds(1);
 			}
+			break;
 
-			chThdSleepMilliseconds(1);
-		}
-		break;
+		case MOTOR_TYPE_BLDC:
+			while (UTILS_AGE_S(time_start) < timeout) {
+				if (mcpwm_get_state() == MC_STATE_OFF) {
+					res = true;
+					break;
+				}
 
-	case MOTOR_TYPE_FOC:
-		while (UTILS_AGE_S(time_start) < timeout) {
-			if (mcpwm_foc_get_state() == MC_STATE_OFF) {
-				res = true;
-				break;
+				chThdSleepMilliseconds(1);
 			}
+			break;
 
-			chThdSleepMilliseconds(1);
-		}
-		break;
+		case MOTOR_TYPE_FOC:
+			while (UTILS_AGE_S(time_start) < timeout) {
+				if (mcpwm_foc_get_state() == MC_STATE_OFF) {
+					res = true;
+					break;
+				}
 
-	default:
-		break;
+				chThdSleepMilliseconds(1);
+			}
+			break;
+
+		default:
+			break;
 	}
 
 	return res;
@@ -989,17 +1051,20 @@ float mc_interface_get_duty_cycle_set(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_duty_cycle_set();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_get_duty_cycle_set();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_duty_cycle_set();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_duty_cycle_set();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_duty_cycle_set();
+			break;
+
+		default:
+			break;
 	}
 
 	return DIR_MULT * ret;
@@ -1009,17 +1074,20 @@ float mc_interface_get_duty_cycle_now(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_duty_cycle_now();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_duty_cycle_now();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_duty_cycle_now();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_duty_cycle_now();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_duty_cycle_now();
+			break;
+
+		default:
+			break;
 	}
 
 	return DIR_MULT * ret;
@@ -1029,17 +1097,20 @@ float mc_interface_get_sampling_frequency_now(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_switching_frequency_now();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_switching_frequency_now();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_sampling_frequency_now();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_switching_frequency_now();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_sampling_frequency_now();
+			break;
+
+		default:
+			break;
 	}
 
 	return ret;
@@ -1049,17 +1120,20 @@ float mc_interface_get_rpm(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_rpm();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_rpm();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_rpm();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_rpm();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_rpm();
+			break;
+
+		default:
+			break;
 	}
 
 	return DIR_MULT * ret;
@@ -1145,17 +1219,20 @@ float mc_interface_get_tot_current(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_tot_current();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_tot_current();
+			break; 
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_tot_current();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_tot_current();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_tot_current();
+			break;
+
+		default:
+			break;
 	}
 
 	return ret;
@@ -1165,17 +1242,20 @@ float mc_interface_get_tot_current_filtered(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_tot_current_filtered();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_tot_current_filtered();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_tot_current_filtered();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_tot_current_filtered();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_tot_current_filtered();
+			break;
+
+		default:
+			break;
 	}
 
 	return ret;
@@ -1185,17 +1265,20 @@ float mc_interface_get_tot_current_directional(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_tot_current_directional();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_tot_current_directional();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_tot_current_directional();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_get_tot_current_directional();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_tot_current_directional();
+			break;
+
+		default:
+			break;
 	}
 
 	return DIR_MULT * ret;
@@ -1245,17 +1328,20 @@ float mc_interface_get_tot_current_in_filtered(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_tot_current_in_filtered();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_get_tot_current_in_filtered();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_tot_current_in_filtered();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_tot_current_in_filtered();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_tot_current_in_filtered();
+			break;
+
+		default:
+			break;
 	}
 
 	return ret;
@@ -1270,16 +1356,18 @@ float mc_interface_get_abs_motor_current_unbalance(void) {
 
 #ifdef HW_HAS_3_SHUNTS
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		break;
+		case MOTOR_TYPE_DC:
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_abs_motor_current_unbalance();
-		break;
+		case MOTOR_TYPE_BLDC:
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_abs_motor_current_unbalance();
+			break;
+
+		default:
+			break;
 	}
 #endif
 	return ret;
@@ -1288,17 +1376,20 @@ float mc_interface_get_abs_motor_current_unbalance(void) {
 int mc_interface_set_tachometer_value(int steps) {
 	int ret = 0;
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_set_tachometer_value(DIR_MULT * steps);
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_set_tachometer_value(DIR_MULT * steps);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_set_tachometer_value(DIR_MULT * steps);
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_set_tachometer_value(DIR_MULT * steps);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_set_tachometer_value(DIR_MULT * steps);
+			break;
+
+		default:
+			break;
 	}
 
 	return DIR_MULT * ret;
@@ -1308,17 +1399,20 @@ int mc_interface_get_tachometer_value(bool reset) {
 	int ret = 0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_tachometer_value(reset);
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_tachometer_value(reset);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_tachometer_value(reset);
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_tachometer_value(reset);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_tachometer_value(reset);
+			break;
+
+		default:
+			break;
 	}
 
 	return DIR_MULT * ret;
@@ -1328,17 +1422,20 @@ int mc_interface_get_tachometer_abs_value(bool reset) {
 	int ret = 0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_tachometer_abs_value(reset);
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_tachometer_abs_value(reset);
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_tachometer_abs_value(reset);
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_tachometer_abs_value(reset);
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_tachometer_abs_value(reset);
+			break;
+
+		default:
+			break;
 	}
 
 	return ret;
@@ -1348,17 +1445,20 @@ float mc_interface_get_last_inj_adc_isr_duration(void) {
 	float ret = 0.0;
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_last_inj_adc_isr_duration();
-		break;
+		case MOTOR_TYPE_DC:
+			ret = mcpwm_dc_get_last_adc_isr_duration();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_last_adc_isr_duration();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = mcpwm_get_last_inj_adc_isr_duration();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_last_adc_isr_duration();
+			break;
+
+		default:
+			break;
 	}
 
 	return ret;
@@ -1440,17 +1540,19 @@ float mc_interface_get_pid_pos_now(void) {
 	volatile mc_configuration *conf = &motor_now()->m_conf;
 
 	switch (conf->motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		ret = encoder_read_deg();
-		break;
+		case MOTOR_TYPE_DC:
+			break;
 
-	case MOTOR_TYPE_FOC:
-		ret = mcpwm_foc_get_pid_pos_now();
-		break;
+		case MOTOR_TYPE_BLDC:
+			ret = encoder_read_deg();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			ret = mcpwm_foc_get_pid_pos_now();
+			break;
+
+		default:
+			break;
 	}
 
 	if (encoder_is_configured()) {
@@ -1770,17 +1872,18 @@ void mc_interface_set_current_off_delay(float delay_sec) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
+		case MOTOR_TYPE_DC:
+			break;
 
-		break;
+		case MOTOR_TYPE_BLDC:
+			break;
 
-	case MOTOR_TYPE_FOC:
-		mcpwm_foc_set_current_off_delay(delay_sec);
-		break;
+		case MOTOR_TYPE_FOC:
+			mcpwm_foc_set_current_off_delay(delay_sec);
+			break;
 
-	default:
-		break;
+		default:
+			break;
 	}
 }
 
@@ -1816,21 +1919,26 @@ int mc_interface_try_input(void) {
 	}
 
 	switch (motor_now()->m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		if (!mcpwm_init_done()) {
-			retval = 1;
-		}
-		break;
+		case MOTOR_TYPE_DC:
+			if (!mcpwm_dc_init_done()) {
+				retval = 1;
+			}
+			break;
 
-	case MOTOR_TYPE_FOC:
-		if (!mcpwm_foc_init_done()) {
-			retval = 1;
-		}
-		break;
+		case MOTOR_TYPE_BLDC:
+			if (!mcpwm_init_done()) {
+				retval = 1;
+			}
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			if (!mcpwm_foc_init_done()) {
+				retval = 1;
+			}
+			break;
+
+		default:
+			break;
 	}
 
 	return retval;
@@ -2203,16 +2311,19 @@ void mc_interface_mc_timer_isr(bool is_second_motor) {
 
 void mc_interface_adc_inj_int_handler(void) {
 	switch (m_motor_1.m_conf.motor_type) {
-	case MOTOR_TYPE_BLDC:
-	case MOTOR_TYPE_DC:
-		mcpwm_adc_inj_int_handler();
-		break;
+		case MOTOR_TYPE_DC:
+			mcpwm_dc_adc_inj_int_handler();
+			break;
 
-	case MOTOR_TYPE_FOC:
-		break;
+		case MOTOR_TYPE_BLDC:
+			mcpwm_adc_inj_int_handler();
+			break;
 
-	default:
-		break;
+		case MOTOR_TYPE_FOC:
+			break;
+
+		default:
+			break;
 	}
 }
 
@@ -2990,17 +3101,20 @@ static THD_FUNCTION(fault_stop_thread, arg) {
 		motor->m_ignore_iterations = motor->m_conf.m_fault_stop_time_ms;
 
 		switch (motor->m_conf.motor_type) {
-		case MOTOR_TYPE_BLDC:
-		case MOTOR_TYPE_DC:
-			mcpwm_stop_pwm();
-			break;
+			case MOTOR_TYPE_DC:
+				mcpwm_dc_stop_pwm();
+				break;
 
-		case MOTOR_TYPE_FOC:
-			mcpwm_foc_stop_pwm(fault_data_copy.is_second_motor);
-			break;
+			case MOTOR_TYPE_BLDC:
+				mcpwm_stop_pwm();
+				break;
 
-		default:
-			break;
+			case MOTOR_TYPE_FOC:
+				mcpwm_foc_stop_pwm(fault_data_copy.is_second_motor);
+				break;
+
+			default:
+				break;
 		}
 
 		motor->m_fault_now = fault_data_copy.fault_code;
