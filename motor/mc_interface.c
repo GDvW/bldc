@@ -668,7 +668,6 @@ void mc_interface_set_pid_pos(float pos) {
 
 	switch (conf->motor_type) {
 		case MOTOR_TYPE_DC:
-			mcpwm_dc_set_pid_pos(pos);
 			break;
 
 		case MOTOR_TYPE_BLDC:
@@ -1377,7 +1376,6 @@ int mc_interface_set_tachometer_value(int steps) {
 	int ret = 0;
 	switch (motor_now()->m_conf.motor_type) {
 		case MOTOR_TYPE_DC:
-			ret = mcpwm_dc_set_tachometer_value(DIR_MULT * steps);
 			break;
 
 		case MOTOR_TYPE_BLDC:
@@ -1400,7 +1398,6 @@ int mc_interface_get_tachometer_value(bool reset) {
 
 	switch (motor_now()->m_conf.motor_type) {
 		case MOTOR_TYPE_DC:
-			ret = mcpwm_dc_get_tachometer_value(reset);
 			break;
 
 		case MOTOR_TYPE_BLDC:
@@ -1423,7 +1420,6 @@ int mc_interface_get_tachometer_abs_value(bool reset) {
 
 	switch (motor_now()->m_conf.motor_type) {
 		case MOTOR_TYPE_DC:
-			ret = mcpwm_dc_get_tachometer_abs_value(reset);
 			break;
 
 		case MOTOR_TYPE_BLDC:

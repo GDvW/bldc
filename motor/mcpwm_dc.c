@@ -56,7 +56,8 @@ typedef struct
 } mc_timer_struct;
 
 // Private variables
-static volatile int direction; // 0 or 1
+// 0 for negative values, 1 for positive values of duty, current and rpm
+static volatile int direction; 
 // Use the voltage-synchronized samples for this current sample
 // Regular ADC -> ADC from DMA buffer
 // Injected ADC -> triggered by timer
@@ -73,10 +74,10 @@ static volatile bool h_bridge_active;
 static volatile unsigned int slow_ramping_cycles;
 
 // Current measurement parameters
-static volatile bool dccal_done;
+static volatile bool dccal_done;	// Calibration done
+static volatile int curr_start_samples;
 static volatile int curr0_sum;
 static volatile int curr1_sum;
-static volatile int curr_start_samples;
 static volatile int curr0_offset;
 static volatile int curr1_offset;
 #ifdef HW_HAS_3_SHUNTS
@@ -90,6 +91,8 @@ static volatile float last_current_sample_filtered;
 
 static volatile float last_adc_isr_duration;
 static volatile float last_inj_adc_isr_duration;
+static volatile float m_pll_phase;
+static volatile float m_pll_speed;
 
 static volatile mc_configuration *conf;
 
@@ -122,13 +125,18 @@ static volatile int amp_fir_index = 0;
 static void set_duty_cycle_hl(float dutycycle);
 static void set_duty_cycle_ll(float dutycycle);
 static void set_duty_cycle_hw(float dutycycle);
-static void stop_pwm_ll(void);
-static void stop_pwm_hw(void);
+static void stop_pwm_motor_ll(void);
+static void stop_pwm_motor_hw(void);
 static void do_dc_cal(void);
 
 static void set_next_timer_settings(mc_timer_struct *settings);
 static void update_adc_sample_pos(mc_timer_struct *timer_tmp);
 static void set_direction_hw(void);
+static void update_timer_attempt(void);
+static void set_switching_frequency(float frequency);
+static void full_brake_hw(void);
+static void full_brake_ll(void);
+
 
 // Initializes the motor controller
 void mcpwm_dc_init(volatile mc_configuration *configuration)
@@ -139,8 +147,24 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 
 	conf = configuration;
 
+	// Set defaults
 	control_mode = CONTROL_MODE_NONE;
 	state = MC_STATE_OFF;
+	direction = 1; 
+	use_regular_adc = false;
+	dutycycle_set = 0.0;
+	dutycycle_now = 0.0;
+	speed_pid_set_rpm = 0.0;
+	current_set = 0.0;
+	rpm_now = 0.0;
+	h_bridge_active = false;
+	slow_ramping_cycles = 0;
+	dccal_done = false;
+	switching_frequency_now = conf->m_dc_f_sw;
+	last_current_sample = 0.0;
+	last_current_sample_filtered = 0.0;
+	m_pll_phase = 0.0;
+	m_pll_speed = 0.0;
 
 	// Create current FIR filter
 	filter_create_fir_lowpass((float *)current_fir_coeffs, CURR_FIR_FCUT, CURR_FIR_TAPS_BITS, 1);
@@ -244,7 +268,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 
 	// --- Allocate DMA stream for ADC triple-mode ---
 	// DMA2 Stream 4, Channel 0 is the ONLY stream that can read ADC->CDR.
-	// Priority 5, ISR handler = mcpwm_adc_int_handler.
+	// Priority 5, ISR handler = mcpwm_dc_adc_int_handler.
 	dmaStreamAllocate(STM32_DMA_STREAM(STM32_DMA_STREAM_ID(2, 4)),
 					  5,
 					  (stm32_dmaisr_t)mcpwm_dc_adc_int_handler,
@@ -385,7 +409,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 	TIM_CtrlPWMOutputs(TIM1, ENABLE);
 
 	// ADC sampling locations
-	stop_pwm_hw();
+	stop_pwm_motor_hw();
 	mc_timer_struct timer_tmp;
 	timer_tmp.top = TIM1->ARR;
 	timer_tmp.duty_motor = TIM1->ARR / 2;
@@ -411,11 +435,15 @@ void mcpwm_dc_deinit(void)
 	{
 		return;
 	}
+	
+	init_done = false;
 
 	TIM_DeInit(TIM1);
 	TIM_DeInit(TIM8);
-
-	init_done = false;
+	ADC_DeInit();
+	DMA_DeInit(DMA2_Stream4);
+	nvicDisableVector(ADC_IRQn);
+	dmaStreamRelease(STM32_DMA_STREAM(STM32_DMA_STREAM_ID(2, 4)));
 }
 
 bool mcpwm_dc_init_done(void)
@@ -458,7 +486,7 @@ static void do_dc_cal(void)
 #endif
 
 	curr_start_samples = 0;
-	// The currents are measured by mcpwm_adj_inj_int_handler and the timer is incremented
+	// The currents are measured by mcpwm_dc_adc_inj_int_handler and the timer is incremented
 	// each time measured (which is each PWM cycle). So this loop ends some time
 	while (curr_start_samples < 4000)
 	{
@@ -474,7 +502,7 @@ static void do_dc_cal(void)
 	dccal_done = true;
 }
 
-// Functions used in mcpwm_adc_inj_int_handler
+// Functions used in mcpwm_dc_adc_inj_int_handler
 static inline void read_currents_raw(float *c0, float *c1, float *c2)
 {
 	if (use_regular_adc)
@@ -503,7 +531,7 @@ static inline void read_currents_raw(float *c0, float *c1, float *c2)
 	}
 }
 
-void mcpwm_adc_inj_int_handler(void)
+void mcpwm_dc_adc_inj_int_handler(void)
 {
 	uint32_t t_start = timer_time_now();
 
@@ -593,8 +621,7 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 	update_timer_attempt();
 
 	// Reset the watchdog
-	// TODO: Check if needed
-	// timeout_feed_WDT(THREAD_MCPWM);
+	timeout_feed_WDT(THREAD_MCPWM);
 
 	const float input_voltage = GET_INPUT_VOLTAGE();
 
@@ -619,7 +646,7 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 		set_direction_hw(); // sets H-bridge direction pins
 	}
 
-	const float current_nofilter = mcpwm_get_tot_current();
+	const float current_nofilter = mcpwm_dc_get_tot_current();
 	const float current_in_nofilter = current_nofilter * fabsf(dutycycle_now);
 
 	// Only create new duty cycles if the motor is running
@@ -803,6 +830,35 @@ static void set_duty_cycle_hl(float dutycycle)
 	utils_truncate_number(&dutycycle, -conf->l_max_duty, conf->l_max_duty);
 
 	dutycycle_set = dutycycle;
+
+	// Start motor if it isnt running, because control loop will only execute if motor is running
+	if (state != MC_STATE_RUNNING) {
+		if (fabsf(dutycycle) >= conf->l_min_duty) {
+			// dutycycle_now is updated by the back-emf detection. If the motor already
+			// is spinning, it will be non-zero.
+			if (fabsf(dutycycle_now) < conf->l_min_duty) {
+				dutycycle_now = SIGN(dutycycle) * conf->l_min_duty;
+			}
+
+			set_duty_cycle_ll(dutycycle_now);
+		} else {
+			// In case the motor is already spinning, set the state to running
+			// so that it can be ramped down before the full brake is applied.
+			if (conf->motor_type == MOTOR_TYPE_DC) {
+				if (fabsf(dutycycle_now) > 0.1) {
+					state = MC_STATE_RUNNING;
+				} else {
+					full_brake_ll();
+				}
+			} else {
+				if (fabsf(rpm_now) > conf->l_max_erpm_fbrake) {
+					state = MC_STATE_RUNNING;
+				} else {
+					full_brake_ll();
+				}
+			}
+		}
+	}
 }
 
 static void set_duty_cycle_ll(float dutycycle)
@@ -942,20 +998,33 @@ static void update_timer_attempt(void)
 	utils_sys_unlock_cnt();
 }
 
+static void set_switching_frequency(float frequency) {
+	switching_frequency_now = frequency;
+	mc_timer_struct timer_tmp;
+
+	utils_sys_lock_cnt();
+	timer_tmp = timer_struct;
+	utils_sys_unlock_cnt();
+
+	timer_tmp.top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
+	update_adc_sample_pos(&timer_tmp);
+	set_next_timer_settings(&timer_tmp);
+}
+
 /**
  * Switch off all FETs.
  */
 void mcpwm_dc_stop_pwm(void)
 {
 	control_mode = CONTROL_MODE_NONE;
-	stop_pwm_ll();
+	stop_pwm_motor_ll();
 }
-static void stop_pwm_ll(void)
+static void stop_pwm_motor_ll(void)
 {
 	state = MC_STATE_OFF;
-	stop_pwm_hw();
+	stop_pwm_motor_hw();
 }
-static void stop_pwm_hw(void)
+static void stop_pwm_motor_hw(void)
 {
 #ifdef HW_HAS_DRV8313
 	DISABLE_BR();
@@ -965,9 +1034,11 @@ static void stop_pwm_hw(void)
 	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
 	TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Disable);
 
-	TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
-	TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
-	TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
+	if (!conf->dc_enable_parking_brake){
+		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
+		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
+	}
 
 	TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_ForcedAction_InActive);
 	TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
@@ -975,7 +1046,41 @@ static void stop_pwm_hw(void)
 
 	TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
 
-	set_switching_frequency(conf->m_bldc_f_sw_max);
+	set_switching_frequency(conf->m_dc_f_sw);
+}
+static void full_brake_ll(void) {
+	state = MC_STATE_FULL_BRAKE;
+	full_brake_hw();
+}
+
+static void full_brake_hw(void) {
+#ifdef HW_HAS_DRV8313
+	ENABLE_BR();
+#endif
+
+	TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_ForcedAction_InActive);
+	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
+	TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
+
+	if (!conf->dc_enable_parking_brake){
+		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
+		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
+	}
+
+	TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_ForcedAction_InActive);
+	TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
+	TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Enable);
+
+	TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
+
+	set_switching_frequency(conf->m_dc_f_sw);
+}
+
+void mcpwm_dc_release_motor(void) {
+	current_set = 0.0;
+	control_mode = CONTROL_MODE_NONE;
+	stop_pwm_motor_ll();
 }
 
 /**
@@ -1040,12 +1145,12 @@ static void set_direction_hw(void)
  * @param current
  * The current to use. Positive and negative values give the same effect.
  */
-void mcpwm_set_brake_current(float current)
+void mcpwm_dc_set_brake_current(float current)
 {
 	if (fabsf(current) < conf->cc_min_current)
 	{
 		control_mode = CONTROL_MODE_NONE;
-		stop_pwm_ll();
+		stop_pwm_motor_ll();
 		return;
 	}
 
@@ -1058,27 +1163,13 @@ void mcpwm_set_brake_current(float current)
 	{
 		// In case the motor is already spinning, set the state to running
 		// so that it can be ramped down before the full brake is applied.
-		if (conf->motor_type == MOTOR_TYPE_DC)
+		if (fabsf(dutycycle_now) > 0.1)
 		{
-			if (fabsf(dutycycle_now) > 0.1)
-			{
-				state = MC_STATE_RUNNING;
-			}
-			else
-			{
-				full_brake_ll();
-			}
+			state = MC_STATE_RUNNING;
 		}
 		else
 		{
-			if (fabsf(rpm_now) > conf->l_max_erpm_fbrake)
-			{
-				state = MC_STATE_RUNNING;
-			}
-			else
-			{
-				full_brake_ll();
-			}
+			full_brake_ll();
 		}
 	}
 }
@@ -1090,12 +1181,12 @@ void mcpwm_set_brake_current(float current)
  * @param current
  * The current to use.
  */
-void mcpwm_set_current(float current)
+void mcpwm_dc_set_current(float current)
 {
 	if (fabsf(current) < conf->cc_min_current)
 	{
 		control_mode = CONTROL_MODE_NONE;
-		stop_pwm_ll();
+		stop_pwm_motor_ll();
 		return;
 	}
 
@@ -1126,7 +1217,15 @@ void mcpwm_dc_set_duty(float dutycycle)
 
 void mcpwm_dc_set_duty_noramp(float dutycycle)
 {
-	// TODO: Implement this
+	control_mode = CONTROL_MODE_DUTY;
+
+	if (state != MC_STATE_RUNNING) {
+		set_duty_cycle_hl(dutycycle);
+	} else {
+		dutycycle_set = dutycycle;
+		dutycycle_now = dutycycle;
+		set_duty_cycle_ll(dutycycle);
+	}
 }
 
 /**
@@ -1136,21 +1235,10 @@ void mcpwm_dc_set_duty_noramp(float dutycycle)
  * @param rpm
  * The electrical RPM goal value to use.
  */
-void mcpwm_set_pid_speed(float rpm)
+void mcpwm_dc_set_pid_speed(float rpm)
 {
 	control_mode = CONTROL_MODE_SPEED;
 	speed_pid_set_rpm = rpm;
-}
-
-void mcpwm_dc_set_pid_pos(float pos)
-{
-	// Not supported, so ignore
-}
-
-int mcpwm_dc_set_tachometer_value(int steps)
-{
-	// Not supported, so ignore
-	return 0;
 }
 
 /**
@@ -1188,18 +1276,6 @@ float mcpwm_dc_get_switching_frequency_now(void)
 	return switching_frequency_now;
 }
 
-int mcpwm_dc_get_tachometer_value(bool reset)
-{
-	// Not supported
-	return 0;
-}
-
-int mcpwm_dc_get_tachometer_abs_value(bool reset)
-{
-	// Not supported
-	return 0;
-}
-
 /**
  * Get the motor current. The sign of this value will
  * represent whether the motor is drawing (positive) or generating
@@ -1208,7 +1284,7 @@ int mcpwm_dc_get_tachometer_abs_value(bool reset)
  * @return
  * The motor current.
  */
-float mcpwm_get_tot_current(void)
+float mcpwm_dc_get_tot_current(void)
 {
 	return last_current_sample;
 }
@@ -1221,7 +1297,7 @@ float mcpwm_get_tot_current(void)
  * @return
  * The filtered motor current.
  */
-float mcpwm_get_tot_current_filtered(void)
+float mcpwm_dc_get_tot_current_filtered(void)
 {
 	return last_current_sample_filtered;
 }
@@ -1233,9 +1309,9 @@ float mcpwm_get_tot_current_filtered(void)
  * @return
  * The motor current.
  */
-float mcpwm_get_tot_current_directional(void)
+float mcpwm_dc_get_tot_current_directional(void)
 {
-	const float retval = mcpwm_get_tot_current();
+	const float retval = mcpwm_dc_get_tot_current();
 	return dutycycle_now > 0.0 ? retval : -retval;
 }
 
@@ -1246,9 +1322,9 @@ float mcpwm_get_tot_current_directional(void)
  * @return
  * The filtered motor current.
  */
-float mcpwm_get_tot_current_directional_filtered(void)
+float mcpwm_dc_get_tot_current_directional_filtered(void)
 {
-	const float retval = mcpwm_get_tot_current_filtered();
+	const float retval = mcpwm_dc_get_tot_current_filtered();
 	return dutycycle_now > 0.0 ? retval : -retval;
 }
 
@@ -1258,9 +1334,9 @@ float mcpwm_get_tot_current_directional_filtered(void)
  * @return
  * The input current.
  */
-float mcpwm_get_tot_current_in(void)
+float mcpwm_dc_get_tot_current_in(void)
 {
-	return mcpwm_get_tot_current() * fabsf(dutycycle_now);
+	return mcpwm_dc_get_tot_current() * fabsf(dutycycle_now);
 }
 
 /**
@@ -1269,7 +1345,14 @@ float mcpwm_get_tot_current_in(void)
  * @return
  * The filtered input current.
  */
-float mcpwm_get_tot_current_in_filtered(void)
+float mcpwm_dc_get_tot_current_in_filtered(void)
 {
-	return mcpwm_get_tot_current_filtered() * fabsf(dutycycle_now);
+	return mcpwm_dc_get_tot_current_filtered() * fabsf(dutycycle_now);
+}
+
+/**
+ * Returns true if dccal is done. Dccal is the process to remove the standard dc offset in the current measurements
+ */
+bool mcpwm_dc_is_dccal_done(void) {
+	return dccal_done;
 }
