@@ -66,7 +66,7 @@ static volatile float dutycycle_set;
 static volatile float dutycycle_now;
 static volatile float dutycycle_parking_brake_now;
 static volatile float parking_brake_current_max;
-static volatile bool parking_brake_on;
+static volatile bool parking_brake_engaged;
 static volatile float speed_pid_set_rpm;
 static volatile float current_set;
 static volatile float rpm_now;
@@ -128,7 +128,7 @@ static void set_duty_cycle_hl(float dutycycle);
 static void set_duty_cycle_ll(float dutycycle);
 static void set_duty_cycle_hw(float dutycycle);
 static void set_duty_cycle_parking_brake_ll(float dutycycle);
-static void apply_parking_brake_hw(float dutycycle, bool enabled);
+static void apply_parking_brake_hw(float dutycycle, bool engaged);
 static void stop_pwm_motor_ll(void);
 static void stop_pwm_motor_hw(void);
 static void do_dc_cal(void);
@@ -823,6 +823,10 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 		set_duty_cycle_ll(dutycycle_now);
 	}
 
+	if (conf->dc_enable_parking_brake && parking_brake_engaged){
+		set_duty_cycle_parking_brake_ll(0.5);
+	}
+
 	mc_interface_mc_timer_isr(false);
 
 	last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
@@ -839,7 +843,7 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 static void set_duty_cycle_parking_brake_ll(float dutycycle)
 {
 	// If dutycycle is smaller than possible, switch off to prevent overcurrent
-	bool enabled = dutycycle >= conf->l_min_duty;
+	bool engaged = dutycycle >= conf->l_min_duty;
 
 	// Clamp to max
 	if (dutycycle > conf->l_max_duty)
@@ -848,24 +852,24 @@ static void set_duty_cycle_parking_brake_ll(float dutycycle)
 	}
 
 	// Apply
-	apply_parking_brake_hw(dutycycle, enabled);
+	apply_parking_brake_hw(dutycycle, engaged);
 }
 
 /**
  * Applies the dutycycle and state of the parking brake
  * 
  * @param dutycycle - the dutycycle to apply
- * @param enabled - If enabled is true, make sure the output is off. 
+ * @param engaged - If engaged is true, make sure the output is off. 
  * 		This is because the wheelchair needs current to switch off the parking brake (NC)
  */
-static void apply_parking_brake_hw(float dutycycle, bool enabled)
+static void apply_parking_brake_hw(float dutycycle, bool engaged)
 {
 	// Only run if parking brake is enabled in config
 	if (!conf->dc_enable_parking_brake)
 		return;
 
-	// If parking brake is enabled, make sure no current flows (No current -> Parking brake applied)
-	if (enabled){
+	// If parking brake is engaged, make sure no current flows (No current -> Parking brake applied)
+	if (engaged){
 		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive); // Could also be TIM_OCMode_Inactive, but I don't think so		
 		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
 		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
@@ -1175,7 +1179,7 @@ void mcpwm_dc_release_motor(void)
  */
 static void set_direction_hw(void)
 {
-	// If parking brake enabled, this will be set in apply_parking_brake_hw
+	// If parking brake engaged, this will be set in apply_parking_brake_hw
 	if (!conf->dc_enable_parking_brake)
 	{
 		// 0
@@ -1225,6 +1229,18 @@ static void set_direction_hw(void)
 /**
  * Easy setters. Sets the target values for control loops
  */
+
+
+/**
+ * Enables the parking brake if dutyCycle is correct. Bigger than 0 will apply the parking brake
+ * Smaller will disengage it.
+ * 
+ * @param dutycycle 
+ * The parameter on basis of which it is decided to engage/disengage the parking brake
+ */
+void mcpwm_dc_set_parking_brake(float dutycycle){
+	parking_brake_engaged = (dutycycle >= 0.0f);
+}
 
 /**
  * Brake the motor with a desired current. Absolute values less than
