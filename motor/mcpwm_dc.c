@@ -46,7 +46,6 @@ typedef struct
 	volatile unsigned int top;
 	volatile unsigned int duty_motor;
 	volatile unsigned int duty_brake;
-	volatile bool brake_on;
 	volatile unsigned int val_sample;
 	volatile unsigned int curr1_sample;
 	volatile unsigned int curr2_sample;
@@ -57,7 +56,7 @@ typedef struct
 
 // Private variables
 // 0 for negative values, 1 for positive values of duty, current and rpm
-static volatile int direction; 
+static volatile int direction;
 // Use the voltage-synchronized samples for this current sample
 // Regular ADC -> ADC from DMA buffer
 // Injected ADC -> triggered by timer
@@ -65,6 +64,9 @@ static volatile bool use_regular_adc;
 // Are signed
 static volatile float dutycycle_set;
 static volatile float dutycycle_now;
+static volatile float dutycycle_parking_brake_now;
+static volatile float parking_brake_current_max;
+static volatile bool parking_brake_on;
 static volatile float speed_pid_set_rpm;
 static volatile float current_set;
 static volatile float rpm_now;
@@ -74,7 +76,7 @@ static volatile bool h_bridge_active;
 static volatile unsigned int slow_ramping_cycles;
 
 // Current measurement parameters
-static volatile bool dccal_done;	// Calibration done
+static volatile bool dccal_done; // Calibration done
 static volatile int curr_start_samples;
 static volatile int curr0_sum;
 static volatile int curr1_sum;
@@ -125,6 +127,8 @@ static volatile int amp_fir_index = 0;
 static void set_duty_cycle_hl(float dutycycle);
 static void set_duty_cycle_ll(float dutycycle);
 static void set_duty_cycle_hw(float dutycycle);
+static void set_duty_cycle_parking_brake_ll(float dutycycle);
+static void apply_parking_brake_hw(float dutycycle, bool enabled);
 static void stop_pwm_motor_ll(void);
 static void stop_pwm_motor_hw(void);
 static void do_dc_cal(void);
@@ -136,7 +140,6 @@ static void update_timer_attempt(void);
 static void set_switching_frequency(float frequency);
 static void full_brake_hw(void);
 static void full_brake_ll(void);
-
 
 // Initializes the motor controller
 void mcpwm_dc_init(volatile mc_configuration *configuration)
@@ -150,7 +153,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 	// Set defaults
 	control_mode = CONTROL_MODE_NONE;
 	state = MC_STATE_OFF;
-	direction = 1; 
+	direction = 1;
 	use_regular_adc = false;
 	dutycycle_set = 0.0;
 	dutycycle_now = 0.0;
@@ -435,7 +438,7 @@ void mcpwm_dc_deinit(void)
 	{
 		return;
 	}
-	
+
 	init_done = false;
 
 	TIM_DeInit(TIM1);
@@ -825,6 +828,69 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 	last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
 }
 
+/**
+ * Sets the parking brake duty cycle
+ * To be used by everyone when setting the parking brake duty cycle,
+ * as it performs some essential safety checks to make sure limits are obeyed to
+ *
+ * @param dutycycle - the dutycycle. If it is smaller than minimal dutycycle, pwm will switch off.
+ * 		If is bigger than max, will clip to max.
+ */
+static void set_duty_cycle_parking_brake_ll(float dutycycle)
+{
+	// If dutycycle is smaller than possible, switch off to prevent overcurrent
+	bool enabled = dutycycle >= conf->l_min_duty;
+
+	// Clamp to max
+	if (dutycycle > conf->l_max_duty)
+	{
+		dutycycle = conf->l_max_duty;
+	}
+
+	// Apply
+	apply_parking_brake_hw(dutycycle, enabled);
+}
+
+/**
+ * Applies the dutycycle and state of the parking brake
+ * 
+ * @param dutycycle - the dutycycle to apply
+ * @param enabled - If enabled is true, make sure the output is off. 
+ * 		This is because the wheelchair needs current to switch off the parking brake (NC)
+ */
+static void apply_parking_brake_hw(float dutycycle, bool enabled)
+{
+	// Only run if parking brake is enabled in config
+	if (!conf->dc_enable_parking_brake)
+		return;
+
+	// If parking brake is enabled, make sure no current flows (No current -> Parking brake applied)
+	if (enabled){
+		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive); // Could also be TIM_OCMode_Inactive, but I don't think so		
+		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
+
+		return;
+	}
+
+	TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_OCMode_PWM1);
+	TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+	TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
+	mc_timer_struct timer_tmp;
+
+	utils_sys_lock_cnt();
+	timer_tmp = timer_struct;
+	utils_sys_unlock_cnt();
+
+	utils_truncate_number(&dutycycle, conf->l_min_duty, conf->l_max_duty);
+
+	switching_frequency_now = conf->m_dc_f_sw;
+	timer_tmp.top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
+	timer_tmp.duty_brake = (uint16_t)((float)timer_tmp.top * dutycycle);
+
+	set_next_timer_settings(&timer_tmp);
+}
+
 static void set_duty_cycle_hl(float dutycycle)
 {
 	utils_truncate_number(&dutycycle, -conf->l_max_duty, conf->l_max_duty);
@@ -832,28 +898,42 @@ static void set_duty_cycle_hl(float dutycycle)
 	dutycycle_set = dutycycle;
 
 	// Start motor if it isnt running, because control loop will only execute if motor is running
-	if (state != MC_STATE_RUNNING) {
-		if (fabsf(dutycycle) >= conf->l_min_duty) {
+	if (state != MC_STATE_RUNNING)
+	{
+		if (fabsf(dutycycle) >= conf->l_min_duty)
+		{
 			// dutycycle_now is updated by the back-emf detection. If the motor already
 			// is spinning, it will be non-zero.
-			if (fabsf(dutycycle_now) < conf->l_min_duty) {
+			if (fabsf(dutycycle_now) < conf->l_min_duty)
+			{
 				dutycycle_now = SIGN(dutycycle) * conf->l_min_duty;
 			}
 
 			set_duty_cycle_ll(dutycycle_now);
-		} else {
+		}
+		else
+		{
 			// In case the motor is already spinning, set the state to running
 			// so that it can be ramped down before the full brake is applied.
-			if (conf->motor_type == MOTOR_TYPE_DC) {
-				if (fabsf(dutycycle_now) > 0.1) {
+			if (conf->motor_type == MOTOR_TYPE_DC)
+			{
+				if (fabsf(dutycycle_now) > 0.1)
+				{
 					state = MC_STATE_RUNNING;
-				} else {
+				}
+				else
+				{
 					full_brake_ll();
 				}
-			} else {
-				if (fabsf(rpm_now) > conf->l_max_erpm_fbrake) {
+			}
+			else
+			{
+				if (fabsf(rpm_now) > conf->l_max_erpm_fbrake)
+				{
 					state = MC_STATE_RUNNING;
-				} else {
+				}
+				else
+				{
 					full_brake_ll();
 				}
 			}
@@ -865,7 +945,8 @@ static void set_duty_cycle_ll(float dutycycle)
 {
 	// Determine the direction
 	float dutycycle_abs = fabsf(dutycycle);
-	if (dutycycle_abs >= conf->l_min_duty){
+	if (dutycycle_abs >= conf->l_min_duty)
+	{
 		direction = signbit(dutycycle) == 0 ? 1 : 0;
 	}
 
@@ -877,7 +958,7 @@ static void set_duty_cycle_ll(float dutycycle)
 		full_brake_ll();
 		return;
 	}
-	
+
 	// Clamp the duty cycle
 	if (dutycycle_abs > conf->l_max_duty)
 	{
@@ -998,7 +1079,8 @@ static void update_timer_attempt(void)
 	utils_sys_unlock_cnt();
 }
 
-static void set_switching_frequency(float frequency) {
+static void set_switching_frequency(float frequency)
+{
 	switching_frequency_now = frequency;
 	mc_timer_struct timer_tmp;
 
@@ -1034,7 +1116,8 @@ static void stop_pwm_motor_hw(void)
 	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
 	TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Disable);
 
-	if (!conf->dc_enable_parking_brake){
+	if (!conf->dc_enable_parking_brake)
+	{
 		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
 		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
 		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
@@ -1048,12 +1131,14 @@ static void stop_pwm_motor_hw(void)
 
 	set_switching_frequency(conf->m_dc_f_sw);
 }
-static void full_brake_ll(void) {
+static void full_brake_ll(void)
+{
 	state = MC_STATE_FULL_BRAKE;
 	full_brake_hw();
 }
 
-static void full_brake_hw(void) {
+static void full_brake_hw(void)
+{
 #ifdef HW_HAS_DRV8313
 	ENABLE_BR();
 #endif
@@ -1062,7 +1147,8 @@ static void full_brake_hw(void) {
 	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
 	TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
 
-	if (!conf->dc_enable_parking_brake){
+	if (!conf->dc_enable_parking_brake)
+	{
 		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
 		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
 		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
@@ -1077,7 +1163,8 @@ static void full_brake_hw(void) {
 	set_switching_frequency(conf->m_dc_f_sw);
 }
 
-void mcpwm_dc_release_motor(void) {
+void mcpwm_dc_release_motor(void)
+{
 	current_set = 0.0;
 	control_mode = CONTROL_MODE_NONE;
 	stop_pwm_motor_ll();
@@ -1088,6 +1175,7 @@ void mcpwm_dc_release_motor(void) {
  */
 static void set_direction_hw(void)
 {
+	// If parking brake enabled, this will be set in apply_parking_brake_hw
 	if (!conf->dc_enable_parking_brake)
 	{
 		// 0
@@ -1219,9 +1307,12 @@ void mcpwm_dc_set_duty_noramp(float dutycycle)
 {
 	control_mode = CONTROL_MODE_DUTY;
 
-	if (state != MC_STATE_RUNNING) {
+	if (state != MC_STATE_RUNNING)
+	{
 		set_duty_cycle_hl(dutycycle);
-	} else {
+	}
+	else
+	{
 		dutycycle_set = dutycycle;
 		dutycycle_now = dutycycle;
 		set_duty_cycle_ll(dutycycle);
@@ -1353,6 +1444,7 @@ float mcpwm_dc_get_tot_current_in_filtered(void)
 /**
  * Returns true if dccal is done. Dccal is the process to remove the standard dc offset in the current measurements
  */
-bool mcpwm_dc_is_dccal_done(void) {
+bool mcpwm_dc_is_dccal_done(void)
+{
 	return dccal_done;
 }
