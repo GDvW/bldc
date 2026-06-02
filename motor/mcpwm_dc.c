@@ -125,11 +125,9 @@ static volatile int amp_fir_index = 0;
 static void set_duty_cycle_hl(float dutycycle);
 static void set_duty_cycle_ll(float dutycycle);
 static void set_duty_cycle_hw(float dutycycle);
-static void update_duty_cycle_parking_brake(void);
-static void apply_parking_brake(float dutycycle, bool engaged);
 static void stop_pwm_motor_ll(void);
 static void stop_pwm_ll(void);
-static void stop_pwm_motor_hw(bool parking_channel_included);
+static void stop_pwm_motor_hw(void);
 static void do_dc_cal(void);
 
 static void set_next_timer_settings(mc_timer_struct *settings);
@@ -415,7 +413,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 	TIM_CtrlPWMOutputs(TIM1, ENABLE);
 
 	// ADC sampling locations
-	stop_pwm_motor_hw(true);
+	stop_pwm_motor_hw();
 	mc_timer_struct timer_tmp;
 	timer_tmp.top = TIM1->ARR;
 	timer_tmp.duty_motor = TIM1->ARR / 2;
@@ -1044,14 +1042,14 @@ void mcpwm_dc_stop_pwm(void)
 static void stop_pwm_motor_ll(void)
 {
 	state = MC_STATE_OFF;
-	stop_pwm_motor_hw(false);
+	stop_pwm_motor_hw();
 }
 static void stop_pwm_ll(void)
 {
 	state = MC_STATE_OFF;
-	stop_pwm_motor_hw(true);
+	stop_pwm_motor_hw();
 }
-static void stop_pwm_motor_hw(bool parking_channel_included)
+static void stop_pwm_motor_hw(void)
 {
 #ifdef HW_HAS_DRV8313
 	DISABLE_BR();

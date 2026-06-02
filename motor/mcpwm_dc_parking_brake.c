@@ -18,7 +18,7 @@
 #include "mcpwm_dc_parking_brake.h"
 
 static volatile mc_configuration *conf;
-static volatile switching_frequency_now;
+static volatile float switching_frequency_now;
 
 static volatile float dutycycle_parking_brake_now;
 static volatile bool parking_brake_output_engaged;
@@ -41,10 +41,9 @@ void mcpwm_dc_parking_brake_init(volatile mc_configuration *configuration)
 void mcpwm_dc_parking_brake_set_configuration(volatile mc_configuration *configuration)
 {
     // Stop everything first to be safe
-    stop_pwm_ll();
     dutycycle_parking_brake_now = 0;
     parking_brake_output_engaged = false;
-
+    mcpwm_dc_parking_brake_stop_pwm();
     utils_sys_lock_cnt();
     conf = configuration;
     utils_sys_unlock_cnt();
@@ -54,7 +53,7 @@ void mcpwm_dc_parking_brake_set_configuration(volatile mc_configuration *configu
  * The parking brake control loop
  *
  */
-static void update_duty_cycle_parking_brake(void)
+void update_duty_cycle_parking_brake(void)
 {
     float dutycycle = 0.5f;
     dutycycle_parking_brake_now = dutycycle;
@@ -104,7 +103,7 @@ static void apply_parking_brake(float dutycycle, bool engaged)
     utils_sys_unlock_cnt();
 }
 
-void mcpwm_dc_parking_brake_stop_pwm()
+void mcpwm_dc_parking_brake_stop_pwm(void)
 {
     TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
     TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);

@@ -31,6 +31,7 @@
 #include "commands.h"
 #include "timeout.h"
 #include "mcpwm_dc.h"
+#include "mcpwm_dc_parking_brake.h"
 
 #include <math.h>
 #include <string.h>
