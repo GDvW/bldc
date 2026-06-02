@@ -82,6 +82,17 @@ static void terminal_debug(int argc, const char **argv) {
 	bool is_enabled = mcpwm_dc_is_parking_brake_enabled();
 	bool is_engaged = mcpwm_dc_is_parking_brake_engaged();
 	float duty = mcpwm_dc_get_parking_brake_duty();
-	commands_printf("PB enabled=%d engaged=%d duty=%.3f",
-					is_enabled, is_engaged, (double)duty);
+	uint16_t ccr_call_n = mcpwm_dc_get_ccr_called();
+	uint32_t reg_CCR2 = mcpwm_reg_get_CCR2();
+	uint32_t reg_ARR = mcpwm_reg_get_ARR();
+	uint32_t reg_CCER = mcpwm_reg_get_CCER();
+	uint32_t reg_CCMR1 = mcpwm_reg_get_CCMR1();
+	uint32_t reg_BDTR = mcpwm_reg_get_BDTR();
+	commands_printf("PB enabled=%d engaged=%d duty=%.3f called=%d",
+					is_enabled, is_engaged, (double)duty, ccr_call_n);
+	commands_printf("	reg_CCR2=%d", reg_CCR2);
+	commands_printf("	reg_ARR=%d", reg_ARR);
+	commands_printf("	reg_CCER=%d", reg_CCER);
+	commands_printf("	reg_CCMR1=%d", reg_CCMR1);
+	commands_printf("	reg_BDTR=%d", reg_BDTR);
 }

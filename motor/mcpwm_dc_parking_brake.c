@@ -23,8 +23,7 @@ static volatile float switching_frequency_now;
 static volatile float dutycycle_parking_brake_now;
 static volatile bool parking_brake_output_engaged;
 
-static volatile float conf_parking_brake_max_current;
-static volatile bool conf_parking_brake_enabled;
+static volatile uint16_t is_ccr_called;
 
 static void apply_parking_brake(float dutycycle, bool engaged);
 
@@ -36,6 +35,7 @@ void mcpwm_dc_parking_brake_init(volatile mc_configuration *configuration)
 
     dutycycle_parking_brake_now = 0;
     parking_brake_output_engaged = false;
+    is_ccr_called = 0;
 }
 
 void mcpwm_dc_parking_brake_set_configuration(volatile mc_configuration *configuration)
@@ -96,11 +96,8 @@ static void apply_parking_brake(float dutycycle, bool engaged)
 
     utils_truncate_number(&dutycycle, conf->l_min_duty, conf->l_max_duty);
 
-    uint16_t top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
-    uint16_t duty_brake = (uint16_t)((float)top * dutycycle);
-    TIM1->CCR2 = duty_brake;
-
-    utils_sys_unlock_cnt();
+    TIM1->CCR2 = (uint16_t)((float)TIM1->ARR * dutycycle);
+    is_ccr_called += 1;
 }
 
 void mcpwm_dc_parking_brake_stop_pwm(void)
@@ -134,4 +131,28 @@ bool mcpwm_dc_is_parking_brake_engaged(void)
 float mcpwm_dc_get_parking_brake_duty(void)
 {
     return dutycycle_parking_brake_now;
+}
+uint16_t mcpwm_dc_get_ccr_called(void)
+{
+    return is_ccr_called;
+}
+uint32_t mcpwm_reg_get_CCR2(void)
+{
+    return TIM1->CCR2;
+}
+uint32_t mcpwm_reg_get_ARR(void)
+{
+    return TIM1->ARR;
+}
+uint32_t mcpwm_reg_get_CCER(void)
+{
+    return TIM1->CCER;
+}
+uint32_t mcpwm_reg_get_CCMR1(void)
+{
+    return TIM1->CCMR1;
+}
+uint32_t mcpwm_reg_get_BDTR(void)
+{
+    return TIM1->BDTR;
 }
