@@ -805,7 +805,7 @@ void mc_interface_set_handbrake(float current) {
 	switch (motor_now()->m_conf.motor_type) {
 		case MOTOR_TYPE_DC:
 			// TODO: Not implemented yet, use brake mode for now.
-			mcpwm_dc_set_brake_current(current);
+			mcpwm_dc_set_parking_brake_current(current);
 			break;
 
 		case MOTOR_TYPE_BLDC:
@@ -1051,7 +1051,7 @@ float mc_interface_get_duty_cycle_set(void) {
 
 	switch (motor_now()->m_conf.motor_type) {
 		case MOTOR_TYPE_DC:
-			ret = mcpwm_get_duty_cycle_set();
+			ret = mcpwm_dc_get_duty_cycle_set();
 			break;
 
 		case MOTOR_TYPE_BLDC:
@@ -1265,7 +1265,7 @@ float mc_interface_get_tot_current_directional(void) {
 
 	switch (motor_now()->m_conf.motor_type) {
 		case MOTOR_TYPE_BLDC:
-			ret = mcpwm_get_tot_current_directional();
+			ret = mcpwm_dc_get_tot_current_directional();
 			break;
 
 		case MOTOR_TYPE_DC:
@@ -1289,7 +1289,7 @@ float mc_interface_get_tot_current_directional_filtered(void) {
 	switch (motor_now()->m_conf.motor_type) {
 	case MOTOR_TYPE_BLDC:
 	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_tot_current_directional_filtered();
+		ret = mcpwm_dc_get_tot_current_directional_filtered();
 		break;
 
 	case MOTOR_TYPE_FOC:
@@ -1309,7 +1309,7 @@ float mc_interface_get_tot_current_in(void) {
 	switch (motor_now()->m_conf.motor_type) {
 	case MOTOR_TYPE_BLDC:
 	case MOTOR_TYPE_DC:
-		ret = mcpwm_get_tot_current_in();
+		ret = mcpwm_dc_get_tot_current_in();
 		break;
 
 	case MOTOR_TYPE_FOC:
@@ -1328,7 +1328,7 @@ float mc_interface_get_tot_current_in_filtered(void) {
 
 	switch (motor_now()->m_conf.motor_type) {
 		case MOTOR_TYPE_DC:
-			ret = mcpwm_get_tot_current_in_filtered();
+			ret = mcpwm_dc_get_tot_current_in_filtered();
 			break;
 
 		case MOTOR_TYPE_BLDC:
@@ -2021,6 +2021,13 @@ void mc_interface_mc_timer_isr(bool is_second_motor) {
 		current_in_filtered = mcpwm_foc_get_tot_current_in_filtered_motor(is_second_motor);
 		abs_current = mcpwm_foc_get_abs_motor_current_motor(is_second_motor);
 		abs_current_filtered = mcpwm_foc_get_abs_motor_current_filtered_motor(is_second_motor);
+	} else if (conf_now->motor_type == MOTOR_TYPE_DC) {
+		state = mcpwm_dc_get_state();
+		current = mcpwm_dc_get_tot_current();
+		current_filtered = mcpwm_dc_get_tot_current_filtered();
+		current_in_filtered = mcpwm_dc_get_tot_current_in_filtered();
+		abs_current = mcpwm_dc_get_tot_current();
+		abs_current_filtered = current_filtered;
 	} else {
 		state = mcpwm_get_state();
 		current = mcpwm_get_tot_current();

@@ -36,6 +36,7 @@
 #include "timeout.h"
 #include "encoder/encoder.h"
 #include "timer.h"
+#include "mcpwm_dc_parking_brake.h"
 
 // Structs
 typedef struct
@@ -45,7 +46,6 @@ typedef struct
 	volatile bool updated;
 	volatile unsigned int top;
 	volatile unsigned int duty_motor;
-	volatile unsigned int duty_brake;
 	volatile unsigned int val_sample;
 	volatile unsigned int curr1_sample;
 	volatile unsigned int curr2_sample;
@@ -64,9 +64,7 @@ static volatile bool use_regular_adc;
 // Are signed
 static volatile float dutycycle_set;
 static volatile float dutycycle_now;
-static volatile float dutycycle_parking_brake_now;
-static volatile float parking_brake_current_max;
-static volatile bool parking_brake_engaged;
+
 static volatile float speed_pid_set_rpm;
 static volatile float current_set;
 static volatile float rpm_now;
@@ -127,10 +125,11 @@ static volatile int amp_fir_index = 0;
 static void set_duty_cycle_hl(float dutycycle);
 static void set_duty_cycle_ll(float dutycycle);
 static void set_duty_cycle_hw(float dutycycle);
-static void set_duty_cycle_parking_brake_ll(float dutycycle);
-static void apply_parking_brake_hw(float dutycycle, bool engaged);
+static void update_duty_cycle_parking_brake(void);
+static void apply_parking_brake(float dutycycle, bool engaged);
 static void stop_pwm_motor_ll(void);
-static void stop_pwm_motor_hw(void);
+static void stop_pwm_ll(void);
+static void stop_pwm_motor_hw(bool parking_channel_included);
 static void do_dc_cal(void);
 
 static void set_next_timer_settings(mc_timer_struct *settings);
@@ -144,6 +143,8 @@ static void full_brake_ll(void);
 // Initializes the motor controller
 void mcpwm_dc_init(volatile mc_configuration *configuration)
 {
+	mcpwm_dc_parking_brake_init(configuration);
+
 	utils_sys_lock_cnt();
 
 	init_done = false;
@@ -168,6 +169,8 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 	last_current_sample_filtered = 0.0;
 	m_pll_phase = 0.0;
 	m_pll_speed = 0.0;
+
+	// Initialize the parking brake
 
 	// Create current FIR filter
 	filter_create_fir_lowpass((float *)current_fir_coeffs, CURR_FIR_FCUT, CURR_FIR_TAPS_BITS, 1);
@@ -412,7 +415,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 	TIM_CtrlPWMOutputs(TIM1, ENABLE);
 
 	// ADC sampling locations
-	stop_pwm_motor_hw();
+	stop_pwm_motor_hw(true);
 	mc_timer_struct timer_tmp;
 	timer_tmp.top = TIM1->ARR;
 	timer_tmp.duty_motor = TIM1->ARR / 2;
@@ -456,6 +459,12 @@ bool mcpwm_dc_init_done(void)
 
 void mcpwm_dc_set_configuration(volatile mc_configuration *configuration)
 {
+	// Stop everything first to be safe
+	control_mode = CONTROL_MODE_NONE;
+	stop_pwm_ll();
+
+	mcpwm_dc_parking_brake_set_configuration(configuration);
+
 	utils_sys_lock_cnt();
 	conf = configuration;
 	utils_sys_unlock_cnt();
@@ -627,6 +636,8 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 	timeout_feed_WDT(THREAD_MCPWM);
 
 	const float input_voltage = GET_INPUT_VOLTAGE();
+
+	update_duty_cycle_parking_brake();
 
 	// Reset h_bridge_active if direction changed or motor stopped
 	static int direction_before = 1;
@@ -823,76 +834,9 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 		set_duty_cycle_ll(dutycycle_now);
 	}
 
-	if (conf->dc_enable_parking_brake && parking_brake_engaged){
-		set_duty_cycle_parking_brake_ll(0.5);
-	}
-
 	mc_interface_mc_timer_isr(false);
 
 	last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
-}
-
-/**
- * Sets the parking brake duty cycle
- * To be used by everyone when setting the parking brake duty cycle,
- * as it performs some essential safety checks to make sure limits are obeyed to
- *
- * @param dutycycle - the dutycycle. If it is smaller than minimal dutycycle, pwm will switch off.
- * 		If is bigger than max, will clip to max.
- */
-static void set_duty_cycle_parking_brake_ll(float dutycycle)
-{
-	// If dutycycle is smaller than possible, switch off to prevent overcurrent
-	bool engaged = dutycycle >= conf->l_min_duty;
-
-	// Clamp to max
-	if (dutycycle > conf->l_max_duty)
-	{
-		dutycycle = conf->l_max_duty;
-	}
-
-	// Apply
-	apply_parking_brake_hw(dutycycle, engaged);
-}
-
-/**
- * Applies the dutycycle and state of the parking brake
- * 
- * @param dutycycle - the dutycycle to apply
- * @param engaged - If engaged is true, make sure the output is off. 
- * 		This is because the wheelchair needs current to switch off the parking brake (NC)
- */
-static void apply_parking_brake_hw(float dutycycle, bool engaged)
-{
-	// Only run if parking brake is enabled in config
-	if (!conf->dc_enable_parking_brake)
-		return;
-
-	// If parking brake is engaged, make sure no current flows (No current -> Parking brake applied)
-	if (engaged){
-		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive); // Could also be TIM_OCMode_Inactive, but I don't think so		
-		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
-		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
-
-		return;
-	}
-
-	TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_OCMode_PWM1);
-	TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
-	TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
-	mc_timer_struct timer_tmp;
-
-	utils_sys_lock_cnt();
-	timer_tmp = timer_struct;
-	utils_sys_unlock_cnt();
-
-	utils_truncate_number(&dutycycle, conf->l_min_duty, conf->l_max_duty);
-
-	switching_frequency_now = conf->m_dc_f_sw;
-	timer_tmp.top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
-	timer_tmp.duty_brake = (uint16_t)((float)timer_tmp.top * dutycycle);
-
-	set_next_timer_settings(&timer_tmp);
 }
 
 static void set_duty_cycle_hl(float dutycycle)
@@ -1058,14 +1002,6 @@ static void update_timer_attempt(void)
 		// Set the new configuration
 		TIM1->ARR = timer_struct.top;
 		TIM1->CCR1 = timer_struct.duty_motor;
-		if (conf->dc_enable_parking_brake)
-		{
-			TIM1->CCR2 = timer_struct.duty_brake;
-		}
-		else
-		{
-			TIM1->CCR2 = timer_struct.duty_motor;
-		}
 		TIM1->CCR3 = timer_struct.duty_motor;
 		TIM1->CCR4 = timer_struct.curr1_sample;
 		TIM8->CCR1 = timer_struct.val_sample;
@@ -1108,9 +1044,14 @@ void mcpwm_dc_stop_pwm(void)
 static void stop_pwm_motor_ll(void)
 {
 	state = MC_STATE_OFF;
-	stop_pwm_motor_hw();
+	stop_pwm_motor_hw(false);
 }
-static void stop_pwm_motor_hw(void)
+static void stop_pwm_ll(void)
+{
+	state = MC_STATE_OFF;
+	stop_pwm_motor_hw(true);
+}
+static void stop_pwm_motor_hw(bool parking_channel_included)
 {
 #ifdef HW_HAS_DRV8313
 	DISABLE_BR();
@@ -1120,12 +1061,10 @@ static void stop_pwm_motor_hw(void)
 	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
 	TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Disable);
 
-	if (!conf->dc_enable_parking_brake)
-	{
-		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
-		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
-		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
-	}
+	// if (!conf->dc_enable_parking_brake || parking_channel_included)
+	// {
+	// 	mcpwm_dc_parking_brake_stop_pwm();
+	// }
 
 	TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_ForcedAction_InActive);
 	TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
@@ -1151,13 +1090,6 @@ static void full_brake_hw(void)
 	TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
 	TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
 
-	if (!conf->dc_enable_parking_brake)
-	{
-		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
-		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
-		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
-	}
-
 	TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_ForcedAction_InActive);
 	TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
 	TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Enable);
@@ -1179,15 +1111,6 @@ void mcpwm_dc_release_motor(void)
  */
 static void set_direction_hw(void)
 {
-	// If parking brake engaged, this will be set in apply_parking_brake_hw
-	if (!conf->dc_enable_parking_brake)
-	{
-		// 0
-		TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_OCMode_Inactive);
-		TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
-		TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
-	}
-
 	if (direction)
 	{
 		// +
@@ -1230,16 +1153,16 @@ static void set_direction_hw(void)
  * Easy setters. Sets the target values for control loops
  */
 
-
 /**
  * Enables the parking brake if dutyCycle is correct. Bigger than 0 will apply the parking brake
  * Smaller will disengage it.
- * 
- * @param dutycycle 
+ *
+ * @param dutycycle
  * The parameter on basis of which it is decided to engage/disengage the parking brake
  */
-void mcpwm_dc_set_parking_brake(float dutycycle){
-	parking_brake_engaged = (dutycycle >= 0.0f);
+void mcpwm_dc_set_parking_brake_current(float dutycycle)
+{
+	mcpwm_dc_set_parking_brake(dutycycle > 0.0f);
 }
 
 /**

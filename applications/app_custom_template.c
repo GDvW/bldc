@@ -41,7 +41,7 @@ static THD_WORKING_AREA(my_thread_wa, 1024);
 
 // Private functions
 static void pwm_callback(void);
-static void terminal_test(int argc, const char **argv);
+static void terminal_debug(int argc, const char **argv);
 
 // Private variables
 static volatile bool stop_now = true;
@@ -61,14 +61,14 @@ void app_custom_start(void) {
 			"custom_cmd",
 			"Print the number d",
 			"[d]",
-			terminal_test);
+			terminal_debug);
 }
 
 // Called when the custom application is stopped. Stop our threads
 // and release callbacks.
 void app_custom_stop(void) {
 	mc_interface_set_pwm_callback(0);
-	terminal_unregister_callback(terminal_test);
+	terminal_unregister_callback(terminal_debug);
 
 	stop_now = true;
 	while (is_running) {
@@ -123,7 +123,7 @@ static void pwm_callback(void) {
 }
 
 // Callback function for the terminal command with arguments.
-static void terminal_test(int argc, const char **argv) {
+static void terminal_debug(int argc, const char **argv) {
 	if (argc == 2) {
 		int d = -1;
 		sscanf(argv[1], "%d", &d);
