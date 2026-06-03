@@ -91,8 +91,8 @@ static volatile float last_current_sample_filtered;
 
 static volatile float last_adc_isr_duration;
 static volatile float last_inj_adc_isr_duration;
-static volatile float m_pll_phase;
-static volatile float m_pll_speed;
+static volatile float pll_phase;
+static volatile float pll_speed;
 
 static volatile mc_configuration *conf;
 
@@ -121,6 +121,9 @@ static volatile float amp_fir_coeffs[AMP_FIR_LEN];
 static volatile float amp_fir_samples[AMP_FIR_LEN];
 static volatile int amp_fir_index = 0;
 
+// Ripple (speed) detection vars
+static volatile float ripple_frequency;
+
 // Private functions
 static void set_duty_cycle_hl(float dutycycle);
 static void set_duty_cycle_ll(float dutycycle);
@@ -137,6 +140,7 @@ static void update_timer_attempt(void);
 static void set_switching_frequency(float frequency);
 static void full_brake_hw(void);
 static void full_brake_ll(void);
+static float ripple_to_rpm(float frequency);
 
 // Initializes the motor controller
 void mcpwm_dc_init(volatile mc_configuration *configuration)
@@ -165,8 +169,9 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 	switching_frequency_now = conf->m_dc_f_sw;
 	last_current_sample = 0.0;
 	last_current_sample_filtered = 0.0;
-	m_pll_phase = 0.0;
-	m_pll_speed = 0.0;
+	pll_phase = 0.0;
+	pll_speed = 0.0;
+	ripple_frequency = 0;
 
 	// Initialize the parking brake
 
@@ -612,6 +617,35 @@ void mcpwm_dc_adc_inj_int_handler(void)
 		(float *)current_fir_samples, (float *)current_fir_coeffs,
 		CURR_FIR_TAPS_BITS, current_fir_index);
 
+	// Ripple extraction
+	float ripple_signal = last_current_sample - last_current_sample_filtered;
+
+	// PLL-based frequency tracking
+	const float pll_kp = 0.1; // Tune these values
+	const float pll_ki = 0.01;
+
+	// Phase detector: multiply by quadrature signal
+	float phase_error = ripple_signal * sinf(pll_phase);
+
+	// Update PLL
+	pll_speed += phase_error * pll_ki;
+	pll_phase += pll_speed + phase_error * pll_kp;
+
+	// Normalize phase
+	if (pll_phase > M_PI)
+		pll_phase -= 2.0 * M_PI;
+	if (pll_phase < -M_PI)
+		pll_phase += 2.0 * M_PI;
+
+	// Convert PLL speed to frequency (rad/s to Hz)
+	ripple_frequency = pll_speed / (2.0 * M_PI);
+
+	// Update RPM
+	if (ripple_frequency > 0)
+	{
+		rpm_now = ripple_to_rpm(ripple_frequency);
+	}
+
 	last_inj_adc_isr_duration = timer_seconds_elapsed_since(t_start);
 }
 
@@ -678,15 +712,24 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 
 		float dutycycle_now_tmp = dutycycle_now;
 
-#if BLDC_SPEED_CONTROL_CURRENT
+		if (control_mode == CONTROL_MODE_SPEED)
+		{
+			const float speed_error = speed_pid_set_rpm - rpm_now;
+			// Simple PI controller for speed
+			static float speed_integral = 0.0;
+			speed_integral += speed_error * 0.001; // Integration time step
+			float speed_output = speed_error * conf->s_pid_kp + speed_integral * conf->s_pid_ki;
+
+			// Convert speed output to current setpoint
+			current_set = speed_output;
+			// Then use existing current control logic
+			// done below
+		}
+
 		if (control_mode == CONTROL_MODE_CURRENT ||
 			control_mode == CONTROL_MODE_POS ||
 			control_mode == CONTROL_MODE_SPEED)
 		{
-#else
-		if (control_mode == CONTROL_MODE_CURRENT || control_mode == CONTROL_MODE_POS)
-		{
-#endif
 			// Compute error
 			const float error = current_set - (direction ? current_nofilter : -current_nofilter);
 			float step = error * conf->cc_gain * voltage_scale;
@@ -1031,6 +1074,15 @@ static void set_switching_frequency(float frequency)
 	set_next_timer_settings(&timer_tmp);
 }
 
+static float ripple_to_rpm(float frequency)
+{
+	// RPM = (frequency * 60) / commutator_segments
+	// Add motor parameter to configuration for commutator segments
+	// TODO: add parameter to config so commutator segments is configurable
+	// int commutator_segments = conf->dc_commutator_segments;
+	return (frequency * 60.0) / 5;
+}
+
 /**
  * Switch off all FETs.
  */
@@ -1291,7 +1343,7 @@ float mcpwm_dc_get_rpm(void)
 {
 	// TODO: return the current RPM. However, speed control is not implemented yet
 	// Not supported yet
-	return 0.0;
+	return rpm_now;
 }
 
 mc_state mcpwm_dc_get_state(void)
