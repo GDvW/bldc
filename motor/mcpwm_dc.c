@@ -91,8 +91,8 @@ static volatile float last_current_sample_filtered;
 
 static volatile float last_adc_isr_duration;
 static volatile float last_inj_adc_isr_duration;
-static volatile float m_pll_phase;
-static volatile float m_pll_speed;
+static volatile float pll_phase;
+static volatile float pll_speed;
 
 static volatile mc_configuration *conf;
 
@@ -121,6 +121,9 @@ static volatile float amp_fir_coeffs[AMP_FIR_LEN];
 static volatile float amp_fir_samples[AMP_FIR_LEN];
 static volatile int amp_fir_index = 0;
 
+// Ripple (speed) detection vars
+static volatile float ripple_frequency;
+
 // Private functions
 static void set_duty_cycle_hl(float dutycycle);
 static void set_duty_cycle_ll(float dutycycle);
@@ -137,80 +140,82 @@ static void update_timer_attempt(void);
 static void set_switching_frequency(float frequency);
 static void full_brake_hw(void);
 static void full_brake_ll(void);
+static float ripple_to_rpm(float frequency);
 
 // Initializes the motor controller
 void mcpwm_dc_init(volatile mc_configuration *configuration)
 {
-    mcpwm_dc_parking_brake_init(configuration);
+	mcpwm_dc_parking_brake_init(configuration);
 
-    utils_sys_lock_cnt();
+	utils_sys_lock_cnt();
 
-    init_done = false;
+	init_done = false;
 
-    conf = configuration;
+	conf = configuration;
 
-    // Set defaults
-    control_mode = CONTROL_MODE_NONE;
-    state = MC_STATE_OFF;
-    direction = 1;
-    use_regular_adc = false;
-    dutycycle_set = 0.0;
-    dutycycle_now = 0.0;
-    speed_pid_set_rpm = 0.0;
-    current_set = 0.0;
-    rpm_now = 0.0;
-    h_bridge_active = false;
-    slow_ramping_cycles = 0;
-    dccal_done = false;
-    switching_frequency_now = conf->m_dc_f_sw;
-    last_current_sample = 0.0;
-    last_current_sample_filtered = 0.0;
-    m_pll_phase = 0.0;
-    m_pll_speed = 0.0;
+	// Set defaults
+	control_mode = CONTROL_MODE_NONE;
+	state = MC_STATE_OFF;
+	direction = 1;
+	use_regular_adc = false;
+	dutycycle_set = 0.0;
+	dutycycle_now = 0.0;
+	speed_pid_set_rpm = 0.0;
+	current_set = 0.0;
+	rpm_now = 0.0;
+	h_bridge_active = false;
+	slow_ramping_cycles = 0;
+	dccal_done = false;
+	switching_frequency_now = conf->m_dc_f_sw;
+	last_current_sample = 0.0;
+	last_current_sample_filtered = 0.0;
+	pll_phase = 0.0;
+	pll_speed = 0.0;
+	ripple_frequency = 0;
 
-    // Initialize the parking brake
+	// Initialize the parking brake
 
-    // Create current FIR filter
-    filter_create_fir_lowpass((float *)current_fir_coeffs, CURR_FIR_FCUT, CURR_FIR_TAPS_BITS, 1);
+	// Create current FIR filter
+	filter_create_fir_lowpass((float *)current_fir_coeffs, CURR_FIR_FCUT, CURR_FIR_TAPS_BITS, 1);
 
-    // Create amplitude FIR filter
-    filter_create_fir_lowpass((float *)amp_fir_coeffs, AMP_FIR_FCUT, AMP_FIR_TAPS_BITS, 1);
+	// Create amplitude FIR filter
+	filter_create_fir_lowpass((float *)amp_fir_coeffs, AMP_FIR_FCUT, AMP_FIR_TAPS_BITS, 1);
 
-    // Initialize clocks
-    // TIM1 is used to generate PWM signals
-    // TIM8 and TIM1->CC4 is used for ADC sampling
+	// Initialize clocks
+	// TIM1 is used to generate PWM signals
+	// TIM8 and TIM1->CC4 is used for ADC sampling
 
-    // Create structs for configuration of clocks
-    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-    TIM_OCInitTypeDef TIM_OCInitStructure;
-    TIM_BDTRInitTypeDef TIM_BDTRInitStructure;
+	// Create structs for configuration of clocks
+	TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+	TIM_OCInitTypeDef TIM_OCInitStructure;
+	TIM_BDTRInitTypeDef TIM_BDTRInitStructure;
 
-    // Make sure clocks are in a known state
-    TIM_DeInit(TIM1);
-    TIM_DeInit(TIM8);
-    TIM1->CNT = 0;
-    TIM8->CNT = 0;
+	// Make sure clocks are in a known state
+	TIM_DeInit(TIM1);
+	TIM_DeInit(TIM8);
+	TIM1->CNT = 0;
+	TIM8->CNT = 0;
 
-    // Turn on the TIM1 clock
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
+	// Turn on the TIM1 clock
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
 
-    // Configure clock params for TIM1
-    TIM_TimeBaseStructure.TIM_Prescaler = 0;
-    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseStructure.TIM_Period = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
-    TIM_TimeBaseStructure.TIM_ClockDivision = 0;
-    TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;
+	// Configure clock params for TIM1
+	TIM_TimeBaseStructure.TIM_Prescaler = 0;
+	TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+	TIM_TimeBaseStructure.TIM_Period = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
+	TIM_TimeBaseStructure.TIM_ClockDivision = 0;
+	TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;
 
-    // Apply and initialize TIM1
-    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseStructure);
+	// Apply and initialize TIM1
+	TIM_TimeBaseInit(TIM1, &TIM_TimeBaseStructure);
 
-    // Channel 1, 2 and 3 Configuration in PWM mode
-    // PWM1 -> high when CNT < CCR, low otherwise
-    TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
-    TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
-    TIM_OCInitStructure.TIM_OutputNState = TIM_OutputNState_Enable;
-    // Initial duty cycle at 50%
-    TIM_OCInitStructure.TIM_Pulse = TIM1->ARR / 2;
+	// Channel 1, 2 and 3 Configuration in PWM mode
+	// PWM1 -> high when CNT < CCR, low otherwise
+	TIM_OCInitStructure.TIM_OCMode = TIM_OCMode_PWM1;
+	TIM_OCInitStructure.TIM_OutputState = TIM_OutputState_Enable;
+	TIM_OCInitStructure.TIM_OutputNState = TIM_OutputNState_Enable;
+	// Initial duty cycle at 50%
+	TIM_OCInitStructure.TIM_Pulse = TIM1->ARR / 2;
 
 #ifndef INVERTED_TOP_DRIVER_INPUT
     TIM_OCInitStructure.TIM_OCPolarity = TIM_OCPolarity_High; // gpio high = top fets on
@@ -592,27 +597,56 @@ void mcpwm_dc_adc_inj_int_handler(void)
 #else
         curr_tot_sample = -(GET_CURRENT2() - curr1_offset) * FAC_CURRENT2;
 #endif
-    }
-    else
-    {
-        curr_tot_sample = -(GET_CURRENT1() - curr0_offset) * FAC_CURRENT1;
-    }
+	}
+	else
+	{
+		curr_tot_sample = -(GET_CURRENT1() - curr0_offset) * FAC_CURRENT1;
+	}
 
-    last_current_sample = curr_tot_sample;
+	last_current_sample = curr_tot_sample;
 
-    // Filter out outliers
-    if (fabsf(last_current_sample) > (conf->l_abs_current_max * 1.2))
-    {
-        last_current_sample = SIGN(last_current_sample) * conf->l_abs_current_max * 1.2;
-    }
+	// Filter out outliers
+	if (fabsf(last_current_sample) > (conf->l_abs_current_max * 1.2))
+	{
+		last_current_sample = SIGN(last_current_sample) * conf->l_abs_current_max * 1.2;
+	}
 
-    filter_add_sample((float *)current_fir_samples, last_current_sample,
-                      CURR_FIR_TAPS_BITS, (uint32_t *)&current_fir_index);
-    last_current_sample_filtered = filter_run_fir_iteration(
-        (float *)current_fir_samples, (float *)current_fir_coeffs,
-        CURR_FIR_TAPS_BITS, current_fir_index);
+	filter_add_sample((float *)current_fir_samples, last_current_sample,
+					  CURR_FIR_TAPS_BITS, (uint32_t *)&current_fir_index);
+	last_current_sample_filtered = filter_run_fir_iteration(
+		(float *)current_fir_samples, (float *)current_fir_coeffs,
+		CURR_FIR_TAPS_BITS, current_fir_index);
 
-    last_inj_adc_isr_duration = timer_seconds_elapsed_since(t_start);
+	// Ripple extraction
+	float ripple_signal = last_current_sample - last_current_sample_filtered;
+
+	// PLL-based frequency tracking
+	const float pll_kp = 0.1; // Tune these values
+	const float pll_ki = 0.01;
+
+	// Phase detector: multiply by quadrature signal
+	float phase_error = ripple_signal * sinf(pll_phase);
+
+	// Update PLL
+	pll_speed += phase_error * pll_ki;
+	pll_phase += pll_speed + phase_error * pll_kp;
+
+	// Normalize phase
+	if (pll_phase > M_PI)
+		pll_phase -= 2.0 * M_PI;
+	if (pll_phase < -M_PI)
+		pll_phase += 2.0 * M_PI;
+
+	// Convert PLL speed to frequency (rad/s to Hz)
+	ripple_frequency = pll_speed / (2.0 * M_PI);
+
+	// Update RPM
+	if (ripple_frequency > 0)
+	{
+		rpm_now = ripple_to_rpm(ripple_frequency);
+	}
+
+	last_inj_adc_isr_duration = timer_seconds_elapsed_since(t_start);
 }
 
 /*
@@ -678,163 +712,172 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 
         float dutycycle_now_tmp = dutycycle_now;
 
-#if BLDC_SPEED_CONTROL_CURRENT
-        if (control_mode == CONTROL_MODE_CURRENT ||
-            control_mode == CONTROL_MODE_POS ||
-            control_mode == CONTROL_MODE_SPEED)
-        {
-#else
-        if (control_mode == CONTROL_MODE_CURRENT || control_mode == CONTROL_MODE_POS)
-        {
-#endif
-            // Compute error
-            const float error = current_set - (direction ? current_nofilter : -current_nofilter);
-            float step = error * conf->cc_gain * voltage_scale;
-            const float start_boost = conf->cc_startup_boost_duty * voltage_scale;
+		if (control_mode == CONTROL_MODE_SPEED)
+		{
+			const float speed_error = speed_pid_set_rpm - rpm_now;
+			// Simple PI controller for speed
+			static float speed_integral = 0.0;
+			speed_integral += speed_error * 0.001; // Integration time step
+			float speed_output = speed_error * conf->s_pid_kp + speed_integral * conf->s_pid_ki;
 
-            // Do not ramp too much
-            utils_truncate_number(&step, -conf->cc_ramp_step_max, conf->cc_ramp_step_max);
+			// Convert speed output to current setpoint
+			current_set = speed_output;
+			// Then use existing current control logic
+			// done below
+		}
 
-            // Switching frequency correction
-            step /= switching_frequency_now / 1000.0;
+		if (control_mode == CONTROL_MODE_CURRENT ||
+			control_mode == CONTROL_MODE_POS ||
+			control_mode == CONTROL_MODE_SPEED)
+		{
+			// Compute error
+			const float error = current_set - (direction ? current_nofilter : -current_nofilter);
+			float step = error * conf->cc_gain * voltage_scale;
+			const float start_boost = conf->cc_startup_boost_duty * voltage_scale;
 
-            if (slow_ramping_cycles)
-            {
-                slow_ramping_cycles--;
-                step *= 0.1;
-            }
+			// Do not ramp too much
+			utils_truncate_number(&step, -conf->cc_ramp_step_max, conf->cc_ramp_step_max);
 
-            // Optionally apply startup boost.
-            if (fabsf(dutycycle_now_tmp) < start_boost)
-            {
-                utils_step_towards(&dutycycle_now_tmp,
-                                   current_set > 0.0 ? start_boost : -start_boost, ramp_step);
-            }
-            else
-            {
-                dutycycle_now_tmp += step;
-            }
+			// Switching frequency correction
+			step /= switching_frequency_now / 1000.0;
 
-            // Upper truncation
-            utils_truncate_number((float *)&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
+			if (slow_ramping_cycles)
+			{
+				slow_ramping_cycles--;
+				step *= 0.1;
+			}
 
-            // Lower truncation
-            if (fabsf(dutycycle_now_tmp) < conf->l_min_duty)
-            {
-                if (dutycycle_now_tmp < 0.0 && current_set > 0.0)
-                {
-                    dutycycle_now_tmp = conf->l_min_duty;
-                }
-                else if (dutycycle_now_tmp > 0.0 && current_set < 0.0)
-                {
-                    dutycycle_now_tmp = -conf->l_min_duty;
-                }
-            }
+			// Optionally apply startup boost.
+			if (fabsf(dutycycle_now_tmp) < start_boost)
+			{
+				utils_step_towards(&dutycycle_now_tmp,
+								   current_set > 0.0 ? start_boost : -start_boost, ramp_step);
+			}
+			else
+			{
+				dutycycle_now_tmp += step;
+			}
 
-            // The set dutycycle should be in the correct direction in case the output is lower
-            // than the minimum duty cycle and the mechanism below gets activated.
-            dutycycle_set = dutycycle_now_tmp >= 0.0 ? conf->l_min_duty : -conf->l_min_duty;
-        }
-        else if (control_mode == CONTROL_MODE_CURRENT_BRAKE)
-        {
-            // Compute error
-            const float error = -fabsf(current_set) - current_nofilter;
-            float step = error * conf->cc_gain * voltage_scale;
+			// Upper truncation
+			utils_truncate_number((float *)&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
 
-            // Do not ramp too much
-            utils_truncate_number(&step, -conf->cc_ramp_step_max, conf->cc_ramp_step_max);
+			// Lower truncation
+			if (fabsf(dutycycle_now_tmp) < conf->l_min_duty)
+			{
+				if (dutycycle_now_tmp < 0.0 && current_set > 0.0)
+				{
+					dutycycle_now_tmp = conf->l_min_duty;
+				}
+				else if (dutycycle_now_tmp > 0.0 && current_set < 0.0)
+				{
+					dutycycle_now_tmp = -conf->l_min_duty;
+				}
+			}
 
-            // Switching frequency correction
-            step /= switching_frequency_now / 1000.0;
+			// The set dutycycle should be in the correct direction in case the output is lower
+			// than the minimum duty cycle and the mechanism below gets activated.
+			dutycycle_set = dutycycle_now_tmp >= 0.0 ? conf->l_min_duty : -conf->l_min_duty;
+		}
+		else if (control_mode == CONTROL_MODE_CURRENT_BRAKE)
+		{
+			// Compute error
+			const float error = -fabsf(current_set) - current_nofilter;
+			float step = error * conf->cc_gain * voltage_scale;
 
-            if (slow_ramping_cycles)
-            {
-                slow_ramping_cycles--;
-                step *= 0.1;
-            }
+			// Do not ramp too much
+			utils_truncate_number(&step, -conf->cc_ramp_step_max, conf->cc_ramp_step_max);
 
-            dutycycle_now_tmp += SIGN(dutycycle_now_tmp) * step;
+			// Switching frequency correction
+			step /= switching_frequency_now / 1000.0;
 
-            // Upper truncation
-            utils_truncate_number((float *)&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
+			if (slow_ramping_cycles)
+			{
+				slow_ramping_cycles--;
+				step *= 0.1;
+			}
 
-            // Lower truncation
-            if (fabsf(dutycycle_now_tmp) < conf->l_min_duty)
-            {
-                if (fabsf(rpm_now) < conf->l_max_erpm_fbrake_cc)
-                {
-                    dutycycle_now_tmp = 0.0;
-                    dutycycle_set = dutycycle_now_tmp;
-                }
-                else
-                {
-                    dutycycle_now_tmp = SIGN(dutycycle_now_tmp) * conf->l_min_duty;
-                    dutycycle_set = dutycycle_now_tmp;
-                }
-            }
-        }
-        else
-        {
-            utils_step_towards((float *)&dutycycle_now_tmp, dutycycle_set, ramp_step);
-        }
+			dutycycle_now_tmp += SIGN(dutycycle_now_tmp) * step;
 
-        static int limit_delay = 0;
+			// Upper truncation
+			utils_truncate_number((float *)&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
 
-        // Apply limits in priority order
-        if (current_nofilter > conf->lo_current_max)
-        {
-            utils_step_towards((float *)&dutycycle_now, 0.0,
-                               ramp_step_no_lim * fabsf(current_nofilter - conf->lo_current_max) * conf->m_current_backoff_gain);
-            limit_delay = 1;
-        }
-        else if (current_nofilter < conf->lo_current_min)
-        {
-            utils_step_towards((float *)&dutycycle_now, direction ? conf->l_max_duty : -conf->l_max_duty,
-                               ramp_step_no_lim * fabsf(current_nofilter - conf->lo_current_min) * conf->m_current_backoff_gain);
-            limit_delay = 1;
-        }
-        else if (current_in_nofilter > conf->lo_in_current_max)
-        {
-            utils_step_towards((float *)&dutycycle_now, 0.0,
-                               ramp_step_no_lim * fabsf(current_in_nofilter - conf->lo_in_current_max) * conf->m_current_backoff_gain);
-            limit_delay = 1;
-        }
-        else if (current_in_nofilter < conf->lo_in_current_min)
-        {
-            utils_step_towards((float *)&dutycycle_now, direction ? conf->l_max_duty : -conf->l_max_duty,
-                               ramp_step_no_lim * fabsf(current_in_nofilter - conf->lo_in_current_min) * conf->m_current_backoff_gain);
-            limit_delay = 1;
-        }
+			// Lower truncation
+			if (fabsf(dutycycle_now_tmp) < conf->l_min_duty)
+			{
+				if (fabsf(rpm_now) < conf->l_max_erpm_fbrake_cc)
+				{
+					dutycycle_now_tmp = 0.0;
+					dutycycle_set = dutycycle_now_tmp;
+				}
+				else
+				{
+					dutycycle_now_tmp = SIGN(dutycycle_now_tmp) * conf->l_min_duty;
+					dutycycle_set = dutycycle_now_tmp;
+				}
+			}
+		}
+		else
+		{
+			utils_step_towards((float *)&dutycycle_now_tmp, dutycycle_set, ramp_step);
+		}
 
-        if (limit_delay > 0)
-        {
-            limit_delay--;
-        }
-        else
-        {
-            dutycycle_now = dutycycle_now_tmp;
-        }
+		static int limit_delay = 0;
 
-        // When the set duty cycle is in the opposite direction, make sure that the motor
-        // starts again after stopping completely
-        if (fabsf(dutycycle_now) < conf->l_min_duty)
-        {
-            if (dutycycle_set >= conf->l_min_duty)
-            {
-                dutycycle_now = conf->l_min_duty;
-            }
-            else if (dutycycle_set <= -conf->l_min_duty)
-            {
-                dutycycle_now = -conf->l_min_duty;
-            }
-        }
+		// Apply limits in priority order
+		if (current_nofilter > conf->lo_current_max)
+		{
+			utils_step_towards((float *)&dutycycle_now, 0.0,
+							   ramp_step_no_lim * fabsf(current_nofilter - conf->lo_current_max) * conf->m_current_backoff_gain);
+			limit_delay = 1;
+		}
+		else if (current_nofilter < conf->lo_current_min)
+		{
+			utils_step_towards((float *)&dutycycle_now, direction ? conf->l_max_duty : -conf->l_max_duty,
+							   ramp_step_no_lim * fabsf(current_nofilter - conf->lo_current_min) * conf->m_current_backoff_gain);
+			limit_delay = 1;
+		}
+		else if (current_in_nofilter > conf->lo_in_current_max)
+		{
+			utils_step_towards((float *)&dutycycle_now, 0.0,
+							   ramp_step_no_lim * fabsf(current_in_nofilter - conf->lo_in_current_max) * conf->m_current_backoff_gain);
+			limit_delay = 1;
+		}
+		else if (current_in_nofilter < conf->lo_in_current_min)
+		{
+			utils_step_towards((float *)&dutycycle_now, direction ? conf->l_max_duty : -conf->l_max_duty,
+							   ramp_step_no_lim * fabsf(current_in_nofilter - conf->lo_in_current_min) * conf->m_current_backoff_gain);
+			limit_delay = 1;
+		}
 
-        set_duty_cycle_ll(dutycycle_now);
-    }
+		if (limit_delay > 0)
+		{
+			limit_delay--;
+		}
+		else
+		{
+			dutycycle_now = dutycycle_now_tmp;
+		}
 
-    mc_interface_mc_timer_isr(false);
+		// When the set duty cycle is in the opposite direction, make sure that the motor
+		// starts again after stopping completely
+		if (fabsf(dutycycle_now) < conf->l_min_duty)
+		{
+			if (dutycycle_set >= conf->l_min_duty)
+			{
+				dutycycle_now = conf->l_min_duty;
+			}
+			else if (dutycycle_set <= -conf->l_min_duty)
+			{
+				dutycycle_now = -conf->l_min_duty;
+			}
+		}
 
-    last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
+		set_duty_cycle_ll(dutycycle_now);
+	}
+
+	mc_interface_mc_timer_isr(false);
+
+	last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
 }
 
 static void set_duty_cycle_hl(float dutycycle)
@@ -1029,6 +1072,15 @@ static void set_switching_frequency(float frequency)
     timer_tmp.top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
     update_adc_sample_pos(&timer_tmp);
     set_next_timer_settings(&timer_tmp);
+}
+
+static float ripple_to_rpm(float frequency)
+{
+	// RPM = (frequency * 60) / commutator_segments
+	// Add motor parameter to configuration for commutator segments
+	// TODO: add parameter to config so commutator segments is configurable
+	// int commutator_segments = conf->dc_commutator_segments;
+	return (frequency * 60.0) / 5;
 }
 
 /**
@@ -1289,9 +1341,9 @@ float mcpwm_dc_get_last_adc_isr_duration(void)
 
 float mcpwm_dc_get_rpm(void)
 {
-    // TODO: return the current RPM. However, speed control is not implemented yet
-    // Not supported yet
-    return 0.0;
+	// TODO: return the current RPM. However, speed control is not implemented yet
+	// Not supported yet
+	return rpm_now;
 }
 
 mc_state mcpwm_dc_get_state(void)
