@@ -679,12 +679,9 @@ void mcpwm_dc_adc_inj_int_handler(void)
         ripple_frequency = pll_speed / (2.0 * M_PI);
 
         // Update RPM
-        if (ripple_frequency > 0)
-        {
-            rpm_unfiltered = ripple_to_rpm(ripple_frequency);
-            // Perform low pass
-            rpm_now = alpha_rpm * rpm_now + (1.0f - alpha_rpm) * rpm_unfiltered;
-        }
+        rpm_unfiltered = ripple_to_rpm(fabsf(ripple_frequency));
+        // Perform low pass
+        rpm_now = alpha_rpm * rpm_now + (1.0f - alpha_rpm) * rpm_unfiltered;
     }
 
     last_inj_adc_isr_duration = timer_seconds_elapsed_since(t_start);
@@ -708,6 +705,10 @@ float get_i_dc(void)
 float get_dt(void)
 {
     return 1.0f / switching_frequency_now;
+}
+float get_rpm_unfiltered(void)
+{
+    return rpm_unfiltered;
 }
 
 float do_dc_current_filtering(float current_sample)
@@ -785,7 +786,7 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
 
         if (control_mode == CONTROL_MODE_SPEED)
         {
-            const float speed_error = speed_pid_set_rpm - rpm_now;
+            const float speed_error = speed_pid_set_rpm - mcpwm_dc_get_rpm();
             // Simple PI controller for speed
             static float speed_integral = 0.0;
             speed_integral += speed_error * 0.001; // Integration time step
