@@ -54,6 +54,17 @@ typedef struct
 #endif
 } mc_timer_struct;
 
+// Struct with IIR filter states
+// This is intended as 3 1st order IIR filters
+// State will go from state1 to state2 to state3
+// New state for single order IIR filter is alpha * state + (1 - alpha) * input
+typedef struct {
+    float alpha;
+    float state1;
+    float state2;
+    float state3;
+} mc_dc_filter_struct;
+
 // Private variables
 // 0 for negative values, 1 for positive values of duty, current and rpm
 static volatile int direction;
@@ -121,6 +132,12 @@ static volatile float amp_fir_coeffs[AMP_FIR_LEN];
 static volatile float amp_fir_samples[AMP_FIR_LEN];
 static volatile int amp_fir_index = 0;
 
+// TODO: Convert to configurable
+#define PLL_KP 50000
+#define PLL_KI 1000000
+// Owned by mcpwm_dc_adc_inj_int_handler
+static mc_dc_filter_struct current_dc_filter;
+
 // Ripple (speed) detection vars
 static volatile float ripple_frequency;
 
@@ -132,6 +149,7 @@ static void stop_pwm_motor_ll(void);
 static void stop_pwm_ll(void);
 static void stop_pwm_motor_hw(void);
 static void do_dc_cal(void);
+static float do_dc_current_filtering(float current_sample);
 
 static void set_next_timer_settings(mc_timer_struct *settings);
 static void update_adc_sample_pos(mc_timer_struct *timer_tmp);
@@ -618,18 +636,17 @@ void mcpwm_dc_adc_inj_int_handler(void)
 		CURR_FIR_TAPS_BITS, current_fir_index);
 
 	// Ripple extraction
-	float ripple_signal = last_current_sample - last_current_sample_filtered;
-
-	// PLL-based frequency tracking
-	const float pll_kp = 0.1; // Tune these values
-	const float pll_ki = 0.01;
+    float i_dc = do_dc_current_filtering(last_current_sample);
+	float ripple_signal = last_current_sample - i_dc;
 
 	// Phase detector: multiply by quadrature signal
 	float phase_error = ripple_signal * sinf(pll_phase);
 
+    float dt = 1.0f / switching_frequency_now;
+
 	// Update PLL
-	pll_speed += phase_error * pll_ki;
-	pll_phase += pll_speed + phase_error * pll_kp;
+	pll_speed += phase_error * PLL_KI * dt;
+	pll_phase += (pll_speed + phase_error * PLL_KP) * dt;
 
 	// Normalize phase
 	if (pll_phase > M_PI)
@@ -647,6 +664,15 @@ void mcpwm_dc_adc_inj_int_handler(void)
 	}
 
 	last_inj_adc_isr_duration = timer_seconds_elapsed_since(t_start);
+}
+
+float do_dc_current_filtering(float current_sample){
+    float a = current_dc_filter.alpha;
+    current_dc_filter.state1 = a * current_dc_filter.state1 + (1.0f - a) * current_sample;
+    current_dc_filter.state2 = a * current_dc_filter.state2 + (1.0f - a) * current_dc_filter.state1;
+    current_dc_filter.state3 = a * current_dc_filter.state3 + (1.0f - a) * current_dc_filter.state2;
+
+    return current_dc_filter.state3;
 }
 
 /*
