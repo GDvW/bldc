@@ -37,6 +37,11 @@ bool mcpwm_dc_is_dccal_done(void);
 
 void mcpwm_dc_adc_int_handler(void *p, uint32_t flags);
 
+float get_pll_phase(void);
+float get_pll_speed(void);
+float get_alpha(void);
+float get_i_dc(void);
+float get_dt(void);
 
 /*
  * Fixed parameters

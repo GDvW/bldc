@@ -27,6 +27,7 @@
 #include "mc_interface.h"
 #include "utils_math.h"
 #include "encoder/encoder.h"
+#include "motor/mcpwm_dc.h"
 #include "terminal.h"
 #include "comm_can.h"
 #include "hw.h"
@@ -41,6 +42,7 @@
 
 // Private functions
 static void terminal_debug(int argc, const char **argv);
+static void terminal_debug_pll(int argc, const char **argv);
 
 /**
  * Called when the application is started
@@ -52,8 +54,13 @@ void app_custom_start(void)
     terminal_register_command_callback(
         "print_debug_parking",
         "Print debug info about parking",
-        "[d]",
+        NULL,
         terminal_debug);
+    terminal_register_command_callback(
+        "print_debug_pll",
+        "Print debug info about PLL speed detection",
+        NULL,
+        terminal_debug_pll);
 }
 
 /**
@@ -100,4 +107,25 @@ static void terminal_debug(int argc, const char **argv)
     commands_printf("	reg_CCER=%d", reg_CCER);
     commands_printf("	reg_CCMR1=%d", reg_CCMR1);
     commands_printf("	reg_BDTR=%d", reg_BDTR);
+}
+/**
+ * Callback function for the terminal. Used to debug the internal state of the PLL speed detection with dc motors
+ */
+static void terminal_debug_pll(int argc, const char **argv)
+{
+    // Get output
+    float rpm = mcpwm_dc_get_rpm();
+    float pll_phase = get_pll_phase();
+    float pll_speed = get_pll_speed();
+    float alpha = get_alpha();
+    float i_dc = get_i_dc();
+    float dt = get_dt();
+    // Print it
+    commands_printf("PLL state");
+    commands_printf("	rpm=%.3f", (double)rpm);
+    commands_printf("	pll_phase=%.3f", (double)pll_phase);
+    commands_printf("	pll_speed=%.3f", (double)pll_speed);
+    commands_printf("	alpha=%.3f", (double)alpha);
+    commands_printf("	i_dc=%.3f", (double)i_dc);
+    commands_printf("	dt=%.8f", (double)dt);
 }
