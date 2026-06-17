@@ -4686,7 +4686,7 @@ p, li { white-space: pre-wrap; }
             <vTx>3</vTx>
         </rpm_filter_cutoff>
         <current_filter_cutoff_pll>
-            <longName>Cutoff frequency DC filter for pll</longName>
+            <longName>Cutoff frequency current DC filter for pll</longName>
             <type>2</type>
             <transmittable>1</transmittable>
             <description>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;

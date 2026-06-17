@@ -200,9 +200,8 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
     ripple_frequency = 0;
 
     // current dc filter init
-    // TODO: make this configurable
     alpha_rpm = expf(-2.0f * (float)M_PI * conf->rpm_filter_cutoff / conf->m_dc_f_sw);
-    current_dc_filter.alpha = expf(-2.0f * (float)M_PI * 250 /*f_cut*/ / conf->m_dc_f_sw);
+    current_dc_filter.alpha = expf(-2.0f * (float)M_PI * conf->current_filter_cutoff_pll / conf->m_dc_f_sw);
     current_dc_filter.state1 = 0;
     current_dc_filter.state2 = 0;
     current_dc_filter.state3 = 0;
@@ -804,8 +803,7 @@ void mcpwm_dc_adc_inj_int_handler(void)
     float i_dc = do_dc_current_filtering(last_current_sample);
 
     // Only perform if there is a noticable amount of current
-    // TODO: Configurable
-    if (fabsf(i_dc) > 0.05)
+    if (fabsf(i_dc) > conf->min_current_pll_detection)
     {
         float ripple_signal = last_current_sample - i_dc;
 
@@ -1273,8 +1271,8 @@ static void update_timer_attempt(void)
 static void set_switching_frequency(float frequency)
 {
     switching_frequency_now = frequency;
-    current_dc_filter.alpha = expf(-2.0f * (float)M_PI * 250 /*f_cut*/ / frequency);
-    alpha_rpm = expf(-2.0f * (float)M_PI * 20 /*f_cut*/ / frequency);
+    alpha_rpm = expf(-2.0f * (float)M_PI * conf->rpm_filter_cutoff / frequency);
+    current_dc_filter.alpha = expf(-2.0f * (float)M_PI * conf->current_filter_cutoff_pll / frequency);
 
     mc_timer_struct timer_tmp;
 
@@ -1290,10 +1288,7 @@ static void set_switching_frequency(float frequency)
 static float ripple_to_rpm(float frequency)
 {
     // RPM = (frequency * 60) / commutator_segments
-    // Add motor parameter to configuration for commutator segments
-    // TODO: add parameter to config so commutator segments is configurable
-    // int commutator_segments = conf->dc_commutator_segments;
-    return (frequency * 60.0) / 5.0f;
+    return (frequency * 60.0) / conf->foc_encoder_ratio;
 }
 
 /**
