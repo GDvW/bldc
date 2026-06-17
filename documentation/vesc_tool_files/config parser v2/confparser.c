@@ -3,19 +3,19 @@
 #include <string.h>
 #include "buffer.h"
 #include "conf_general.h"
-#include "confgenerator.h"
+#include "confparser.h"
 
-int32_t confgenerator_serialize_mcconf(uint8_t *buffer, const mc_configuration *conf) {
+int32_t confparser_serialize_confgenerator(uint8_t *buffer, const confgenerator *conf) {
 	int32_t ind = 0;
 
-	buffer_append_uint32(buffer, MCCONF_SIGNATURE, &ind);
+	buffer_append_uint32(buffer, CONFGENERATOR_SIGNATURE, &ind);
 
 	buffer[ind++] = conf->pwm_mode;
 	buffer[ind++] = conf->comm_mode;
 	buffer[ind++] = conf->motor_type;
 	buffer[ind++] = conf->sensor_mode;
 	buffer[ind++] = conf->dc_enable_parking_brake;
-    buffer_append_float32_auto(buffer, conf->dc_parking_brake_current, &ind);
+	buffer_append_float32_auto(buffer, conf->dc_parking_brake_current, &ind);
 	buffer_append_float32_auto(buffer, conf->l_current_max, &ind);
 	buffer_append_float32_auto(buffer, conf->l_current_min, &ind);
 	buffer_append_float32_auto(buffer, conf->l_in_current_max, &ind);
@@ -218,139 +218,11 @@ int32_t confgenerator_serialize_mcconf(uint8_t *buffer, const mc_configuration *
 	return ind;
 }
 
-int32_t confgenerator_serialize_appconf(uint8_t *buffer, const app_configuration *conf) {
-	int32_t ind = 0;
-
-	buffer_append_uint32(buffer, APPCONF_SIGNATURE, &ind);
-
-	buffer[ind++] = (uint8_t)conf->controller_id;
-	buffer_append_uint32(buffer, conf->timeout_msec, &ind);
-	buffer_append_float32_auto(buffer, conf->timeout_brake_current, &ind);
-	buffer_append_uint16(buffer, conf->can_status_rate_1, &ind);
-	buffer_append_uint16(buffer, conf->can_status_rate_2, &ind);
-	buffer[ind++] = conf->can_status_msgs_r1;
-	buffer[ind++] = conf->can_status_msgs_r2;
-	buffer[ind++] = conf->can_baud_rate;
-	buffer[ind++] = conf->pairing_done;
-	buffer[ind++] = conf->permanent_uart_enabled;
-	buffer[ind++] = conf->shutdown_mode;
-	buffer[ind++] = conf->can_mode;
-	buffer[ind++] = (uint8_t)conf->uavcan_esc_index;
-	buffer[ind++] = conf->uavcan_raw_mode;
-	buffer_append_float32_auto(buffer, conf->uavcan_raw_rpm_max, &ind);
-	buffer[ind++] = conf->uavcan_status_current_mode;
-	buffer[ind++] = conf->servo_out_enable;
-	buffer[ind++] = conf->kill_sw_mode;
-	buffer[ind++] = conf->app_to_use;
-	buffer[ind++] = conf->app_ppm_conf.ctrl_type;
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.pid_max_erpm, &ind);
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.hyst, &ind);
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.pulse_start, &ind);
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.pulse_end, &ind);
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.pulse_center, &ind);
-	buffer[ind++] = conf->app_ppm_conf.median_filter;
-	buffer[ind++] = conf->app_ppm_conf.safe_start;
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.throttle_exp, &ind);
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.throttle_exp_brake, &ind);
-	buffer[ind++] = conf->app_ppm_conf.throttle_exp_mode;
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.ramp_time_pos, &ind);
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.ramp_time_neg, &ind);
-	buffer[ind++] = conf->app_ppm_conf.multi_esc;
-	buffer[ind++] = conf->app_ppm_conf.tc;
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.tc_max_diff, &ind);
-	buffer_append_float16(buffer, conf->app_ppm_conf.max_erpm_for_dir, 1, &ind);
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.smart_rev_max_duty, &ind);
-	buffer_append_float32_auto(buffer, conf->app_ppm_conf.smart_rev_ramp_time, &ind);
-	buffer[ind++] = conf->app_adc_conf.ctrl_type;
-	buffer_append_float32_auto(buffer, conf->app_adc_conf.hyst, &ind);
-	buffer_append_float16(buffer, conf->app_adc_conf.voltage_start, 1000, &ind);
-	buffer_append_float16(buffer, conf->app_adc_conf.voltage_end, 1000, &ind);
-	buffer_append_float16(buffer, conf->app_adc_conf.voltage_min, 1000, &ind);
-	buffer_append_float16(buffer, conf->app_adc_conf.voltage_max, 1000, &ind);
-	buffer_append_float16(buffer, conf->app_adc_conf.voltage_center, 1000, &ind);
-	buffer_append_float16(buffer, conf->app_adc_conf.voltage2_start, 1000, &ind);
-	buffer_append_float16(buffer, conf->app_adc_conf.voltage2_end, 1000, &ind);
-	buffer[ind++] = conf->app_adc_conf.use_filter;
-	buffer[ind++] = conf->app_adc_conf.safe_start;
-	buffer[ind++] = conf->app_adc_conf.buttons;
-	buffer[ind++] = conf->app_adc_conf.voltage_inverted;
-	buffer[ind++] = conf->app_adc_conf.voltage2_inverted;
-	buffer_append_float32_auto(buffer, conf->app_adc_conf.throttle_exp, &ind);
-	buffer_append_float32_auto(buffer, conf->app_adc_conf.throttle_exp_brake, &ind);
-	buffer[ind++] = conf->app_adc_conf.throttle_exp_mode;
-	buffer_append_float32_auto(buffer, conf->app_adc_conf.ramp_time_pos, &ind);
-	buffer_append_float32_auto(buffer, conf->app_adc_conf.ramp_time_neg, &ind);
-	buffer[ind++] = conf->app_adc_conf.multi_esc;
-	buffer[ind++] = conf->app_adc_conf.tc;
-	buffer_append_float32_auto(buffer, conf->app_adc_conf.tc_max_diff, &ind);
-	buffer_append_uint16(buffer, conf->app_adc_conf.update_rate_hz, &ind);
-	buffer_append_uint32(buffer, conf->app_uart_baudrate, &ind);
-	buffer[ind++] = conf->app_chuk_conf.ctrl_type;
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.hyst, &ind);
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.ramp_time_pos, &ind);
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.ramp_time_neg, &ind);
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.stick_erpm_per_s_in_cc, &ind);
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.throttle_exp, &ind);
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.throttle_exp_brake, &ind);
-	buffer[ind++] = conf->app_chuk_conf.throttle_exp_mode;
-	buffer[ind++] = conf->app_chuk_conf.multi_esc;
-	buffer[ind++] = conf->app_chuk_conf.tc;
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.tc_max_diff, &ind);
-	buffer[ind++] = conf->app_chuk_conf.use_smart_rev;
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.smart_rev_max_duty, &ind);
-	buffer_append_float32_auto(buffer, conf->app_chuk_conf.smart_rev_ramp_time, &ind);
-	buffer[ind++] = conf->app_nrf_conf.speed;
-	buffer[ind++] = conf->app_nrf_conf.power;
-	buffer[ind++] = conf->app_nrf_conf.crc_type;
-	buffer[ind++] = conf->app_nrf_conf.retry_delay;
-	buffer[ind++] = (uint8_t)conf->app_nrf_conf.retries;
-	buffer[ind++] = (uint8_t)conf->app_nrf_conf.channel;
-	buffer[ind++] = (uint8_t)conf->app_nrf_conf.address[0];
-	buffer[ind++] = (uint8_t)conf->app_nrf_conf.address[1];
-	buffer[ind++] = (uint8_t)conf->app_nrf_conf.address[2];
-	buffer[ind++] = conf->app_nrf_conf.send_crc_ack;
-	buffer[ind++] = conf->app_pas_conf.ctrl_type;
-	buffer[ind++] = conf->app_pas_conf.sensor_type;
-	buffer_append_float16(buffer, conf->app_pas_conf.current_scaling, 1000, &ind);
-	buffer_append_float16(buffer, conf->app_pas_conf.pedal_rpm_start, 10, &ind);
-	buffer_append_float16(buffer, conf->app_pas_conf.pedal_rpm_end, 10, &ind);
-	buffer[ind++] = conf->app_pas_conf.invert_pedal_direction;
-	buffer_append_uint16(buffer, conf->app_pas_conf.magnets, &ind);
-	buffer[ind++] = conf->app_pas_conf.use_filter;
-	buffer_append_float16(buffer, conf->app_pas_conf.ramp_time_pos, 100, &ind);
-	buffer_append_float16(buffer, conf->app_pas_conf.ramp_time_neg, 100, &ind);
-	buffer_append_uint16(buffer, conf->app_pas_conf.update_rate_hz, &ind);
-	buffer[ind++] = conf->imu_conf.type;
-	buffer[ind++] = conf->imu_conf.mode;
-	buffer[ind++] = conf->imu_conf.filter;
-	buffer_append_float16(buffer, conf->imu_conf.accel_lowpass_filter_x, 1, &ind);
-	buffer_append_float16(buffer, conf->imu_conf.accel_lowpass_filter_y, 1, &ind);
-	buffer_append_float16(buffer, conf->imu_conf.accel_lowpass_filter_z, 1, &ind);
-	buffer_append_float16(buffer, conf->imu_conf.gyro_lowpass_filter, 1, &ind);
-	buffer_append_uint16(buffer, conf->imu_conf.sample_rate_hz, &ind);
-	buffer[ind++] = conf->imu_conf.use_magnetometer;
-	buffer_append_float32_auto(buffer, conf->imu_conf.accel_confidence_decay, &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.mahony_kp, &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.mahony_ki, &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.madgwick_beta, &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.rot_roll, &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.rot_pitch, &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.rot_yaw, &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.accel_offsets[0], &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.accel_offsets[1], &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.accel_offsets[2], &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.gyro_offsets[0], &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.gyro_offsets[1], &ind);
-	buffer_append_float32_auto(buffer, conf->imu_conf.gyro_offsets[2], &ind);
-
-	return ind;
-}
-
-bool confgenerator_deserialize_mcconf(const uint8_t *buffer, mc_configuration *conf) {
+bool confparser_deserialize_confgenerator(const uint8_t *buffer, confgenerator *conf) {
 	int32_t ind = 0;
 
 	uint32_t signature = buffer_get_uint32(buffer, &ind);
-	if (signature != MCCONF_SIGNATURE) {
+	if (signature != CONFGENERATOR_SIGNATURE) {
 		return false;
 	}
 
@@ -359,7 +231,7 @@ bool confgenerator_deserialize_mcconf(const uint8_t *buffer, mc_configuration *c
 	conf->motor_type = buffer[ind++];
 	conf->sensor_mode = buffer[ind++];
 	conf->dc_enable_parking_brake = buffer[ind++];
-    conf->dc_parking_brake_current = buffer_get_float32_auto(buffer, &ind);
+	conf->dc_parking_brake_current = buffer_get_float32_auto(buffer, &ind);
 	conf->l_current_max = buffer_get_float32_auto(buffer, &ind);
 	conf->l_current_min = buffer_get_float32_auto(buffer, &ind);
 	conf->l_in_current_max = buffer_get_float32_auto(buffer, &ind);
@@ -562,144 +434,13 @@ bool confgenerator_deserialize_mcconf(const uint8_t *buffer, mc_configuration *c
 	return true;
 }
 
-bool confgenerator_deserialize_appconf(const uint8_t *buffer, app_configuration *conf) {
-	int32_t ind = 0;
-
-	uint32_t signature = buffer_get_uint32(buffer, &ind);
-	if (signature != APPCONF_SIGNATURE) {
-		return false;
-	}
-
-	conf->controller_id = buffer[ind++];
-	conf->timeout_msec = buffer_get_uint32(buffer, &ind);
-	conf->timeout_brake_current = buffer_get_float32_auto(buffer, &ind);
-	conf->can_status_rate_1 = buffer_get_uint16(buffer, &ind);
-	conf->can_status_rate_2 = buffer_get_uint16(buffer, &ind);
-	conf->can_status_msgs_r1 = buffer[ind++];
-	conf->can_status_msgs_r2 = buffer[ind++];
-	conf->can_baud_rate = buffer[ind++];
-	conf->pairing_done = buffer[ind++];
-	conf->permanent_uart_enabled = buffer[ind++];
-	conf->shutdown_mode = buffer[ind++];
-	conf->can_mode = buffer[ind++];
-	conf->uavcan_esc_index = buffer[ind++];
-	conf->uavcan_raw_mode = buffer[ind++];
-	conf->uavcan_raw_rpm_max = buffer_get_float32_auto(buffer, &ind);
-	conf->uavcan_status_current_mode = buffer[ind++];
-	conf->servo_out_enable = buffer[ind++];
-	conf->kill_sw_mode = buffer[ind++];
-	conf->app_to_use = buffer[ind++];
-	conf->app_ppm_conf.ctrl_type = buffer[ind++];
-	conf->app_ppm_conf.pid_max_erpm = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.hyst = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.pulse_start = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.pulse_end = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.pulse_center = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.median_filter = buffer[ind++];
-	conf->app_ppm_conf.safe_start = buffer[ind++];
-	conf->app_ppm_conf.throttle_exp = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.throttle_exp_brake = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.throttle_exp_mode = buffer[ind++];
-	conf->app_ppm_conf.ramp_time_pos = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.ramp_time_neg = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.multi_esc = buffer[ind++];
-	conf->app_ppm_conf.tc = buffer[ind++];
-	conf->app_ppm_conf.tc_max_diff = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.max_erpm_for_dir = buffer_get_float16(buffer, 1, &ind);
-	conf->app_ppm_conf.smart_rev_max_duty = buffer_get_float32_auto(buffer, &ind);
-	conf->app_ppm_conf.smart_rev_ramp_time = buffer_get_float32_auto(buffer, &ind);
-	conf->app_adc_conf.ctrl_type = buffer[ind++];
-	conf->app_adc_conf.hyst = buffer_get_float32_auto(buffer, &ind);
-	conf->app_adc_conf.voltage_start = buffer_get_float16(buffer, 1000, &ind);
-	conf->app_adc_conf.voltage_end = buffer_get_float16(buffer, 1000, &ind);
-	conf->app_adc_conf.voltage_min = buffer_get_float16(buffer, 1000, &ind);
-	conf->app_adc_conf.voltage_max = buffer_get_float16(buffer, 1000, &ind);
-	conf->app_adc_conf.voltage_center = buffer_get_float16(buffer, 1000, &ind);
-	conf->app_adc_conf.voltage2_start = buffer_get_float16(buffer, 1000, &ind);
-	conf->app_adc_conf.voltage2_end = buffer_get_float16(buffer, 1000, &ind);
-	conf->app_adc_conf.use_filter = buffer[ind++];
-	conf->app_adc_conf.safe_start = buffer[ind++];
-	conf->app_adc_conf.buttons = buffer[ind++];
-	conf->app_adc_conf.voltage_inverted = buffer[ind++];
-	conf->app_adc_conf.voltage2_inverted = buffer[ind++];
-	conf->app_adc_conf.throttle_exp = buffer_get_float32_auto(buffer, &ind);
-	conf->app_adc_conf.throttle_exp_brake = buffer_get_float32_auto(buffer, &ind);
-	conf->app_adc_conf.throttle_exp_mode = buffer[ind++];
-	conf->app_adc_conf.ramp_time_pos = buffer_get_float32_auto(buffer, &ind);
-	conf->app_adc_conf.ramp_time_neg = buffer_get_float32_auto(buffer, &ind);
-	conf->app_adc_conf.multi_esc = buffer[ind++];
-	conf->app_adc_conf.tc = buffer[ind++];
-	conf->app_adc_conf.tc_max_diff = buffer_get_float32_auto(buffer, &ind);
-	conf->app_adc_conf.update_rate_hz = buffer_get_uint16(buffer, &ind);
-	conf->app_uart_baudrate = buffer_get_uint32(buffer, &ind);
-	conf->app_chuk_conf.ctrl_type = buffer[ind++];
-	conf->app_chuk_conf.hyst = buffer_get_float32_auto(buffer, &ind);
-	conf->app_chuk_conf.ramp_time_pos = buffer_get_float32_auto(buffer, &ind);
-	conf->app_chuk_conf.ramp_time_neg = buffer_get_float32_auto(buffer, &ind);
-	conf->app_chuk_conf.stick_erpm_per_s_in_cc = buffer_get_float32_auto(buffer, &ind);
-	conf->app_chuk_conf.throttle_exp = buffer_get_float32_auto(buffer, &ind);
-	conf->app_chuk_conf.throttle_exp_brake = buffer_get_float32_auto(buffer, &ind);
-	conf->app_chuk_conf.throttle_exp_mode = buffer[ind++];
-	conf->app_chuk_conf.multi_esc = buffer[ind++];
-	conf->app_chuk_conf.tc = buffer[ind++];
-	conf->app_chuk_conf.tc_max_diff = buffer_get_float32_auto(buffer, &ind);
-	conf->app_chuk_conf.use_smart_rev = buffer[ind++];
-	conf->app_chuk_conf.smart_rev_max_duty = buffer_get_float32_auto(buffer, &ind);
-	conf->app_chuk_conf.smart_rev_ramp_time = buffer_get_float32_auto(buffer, &ind);
-	conf->app_nrf_conf.speed = buffer[ind++];
-	conf->app_nrf_conf.power = buffer[ind++];
-	conf->app_nrf_conf.crc_type = buffer[ind++];
-	conf->app_nrf_conf.retry_delay = buffer[ind++];
-	conf->app_nrf_conf.retries = (int8_t)buffer[ind++];
-	conf->app_nrf_conf.channel = (int8_t)buffer[ind++];
-	conf->app_nrf_conf.address[0] = buffer[ind++];
-	conf->app_nrf_conf.address[1] = buffer[ind++];
-	conf->app_nrf_conf.address[2] = buffer[ind++];
-	conf->app_nrf_conf.send_crc_ack = buffer[ind++];
-	conf->app_pas_conf.ctrl_type = buffer[ind++];
-	conf->app_pas_conf.sensor_type = buffer[ind++];
-	conf->app_pas_conf.current_scaling = buffer_get_float16(buffer, 1000, &ind);
-	conf->app_pas_conf.pedal_rpm_start = buffer_get_float16(buffer, 10, &ind);
-	conf->app_pas_conf.pedal_rpm_end = buffer_get_float16(buffer, 10, &ind);
-	conf->app_pas_conf.invert_pedal_direction = buffer[ind++];
-	conf->app_pas_conf.magnets = buffer_get_uint16(buffer, &ind);
-	conf->app_pas_conf.use_filter = buffer[ind++];
-	conf->app_pas_conf.ramp_time_pos = buffer_get_float16(buffer, 100, &ind);
-	conf->app_pas_conf.ramp_time_neg = buffer_get_float16(buffer, 100, &ind);
-	conf->app_pas_conf.update_rate_hz = buffer_get_uint16(buffer, &ind);
-	conf->imu_conf.type = buffer[ind++];
-	conf->imu_conf.mode = buffer[ind++];
-	conf->imu_conf.filter = buffer[ind++];
-	conf->imu_conf.accel_lowpass_filter_x = buffer_get_float16(buffer, 1, &ind);
-	conf->imu_conf.accel_lowpass_filter_y = buffer_get_float16(buffer, 1, &ind);
-	conf->imu_conf.accel_lowpass_filter_z = buffer_get_float16(buffer, 1, &ind);
-	conf->imu_conf.gyro_lowpass_filter = buffer_get_float16(buffer, 1, &ind);
-	conf->imu_conf.sample_rate_hz = buffer_get_uint16(buffer, &ind);
-	conf->imu_conf.use_magnetometer = buffer[ind++];
-	conf->imu_conf.accel_confidence_decay = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.mahony_kp = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.mahony_ki = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.madgwick_beta = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.rot_roll = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.rot_pitch = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.rot_yaw = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.accel_offsets[0] = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.accel_offsets[1] = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.accel_offsets[2] = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.gyro_offsets[0] = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.gyro_offsets[1] = buffer_get_float32_auto(buffer, &ind);
-	conf->imu_conf.gyro_offsets[2] = buffer_get_float32_auto(buffer, &ind);
-
-	return true;
-}
-
-void confgenerator_set_defaults_mcconf(mc_configuration *conf) {
+void confparser_set_defaults_confgenerator(confgenerator *conf) {
 	conf->pwm_mode = MCCONF_PWM_MODE;
 	conf->comm_mode = MCCONF_COMM_MODE;
 	conf->motor_type = MCCONF_DEFAULT_MOTOR_TYPE;
 	conf->sensor_mode = MCCONF_SENSOR_MODE;
-	conf->dc_enable_parking_brake = false;
-    conf->dc_parking_brake_current = 0;
+	conf->dc_enable_parking_brake = ;
+	conf->dc_parking_brake_current = ;
 	conf->l_current_max = MCCONF_L_CURRENT_MAX;
 	conf->l_current_min = MCCONF_L_CURRENT_MIN;
 	conf->l_in_current_max = MCCONF_L_IN_CURRENT_MAX;
@@ -900,124 +641,3 @@ void confgenerator_set_defaults_mcconf(mc_configuration *conf) {
 	conf->min_current_pll_detection = 0.05;
 }
 
-void confgenerator_set_defaults_appconf(app_configuration *conf) {
-	conf->controller_id = HW_DEFAULT_ID;
-	conf->timeout_msec = APPCONF_TIMEOUT_MSEC;
-	conf->timeout_brake_current = APPCONF_TIMEOUT_BRAKE_CURRENT;
-	conf->can_status_rate_1 = APPCONF_CAN_STATUS_RATE_1;
-	conf->can_status_rate_2 = APPCONF_CAN_STATUS_RATE_2;
-	conf->can_status_msgs_r1 = APPCONF_CAN_STATUS_MSGS_R1;
-	conf->can_status_msgs_r2 = APPCONF_CAN_STATUS_MSGS_R2;
-	conf->can_baud_rate = APPCONF_CAN_BAUD_RATE;
-	conf->pairing_done = APPCONF_PAIRING_DONE;
-	conf->permanent_uart_enabled = APPCONF_PERMANENT_UART_ENABLED;
-	conf->shutdown_mode = APPCONF_SHUTDOWN_MODE;
-	conf->can_mode = APPCONF_CAN_MODE;
-	conf->uavcan_esc_index = APPCONF_UAVCAN_ESC_INDEX;
-	conf->uavcan_raw_mode = APPCONF_UAVCAN_RAW_MODE;
-	conf->uavcan_raw_rpm_max = APPCONF_UAVCAN_RAW_RPM_MAX;
-	conf->uavcan_status_current_mode = APPCONF_UAVCAN_STATUS_CURRENT_MODE;
-	conf->servo_out_enable = APPCONF_SERVO_OUT_ENABLE;
-	conf->kill_sw_mode = APPCONF_KILL_SW_MODE;
-	conf->app_to_use = APPCONF_APP_TO_USE;
-	conf->app_ppm_conf.ctrl_type = APPCONF_PPM_CTRL_TYPE;
-	conf->app_ppm_conf.pid_max_erpm = APPCONF_PPM_PID_MAX_ERPM;
-	conf->app_ppm_conf.hyst = APPCONF_PPM_HYST;
-	conf->app_ppm_conf.pulse_start = APPCONF_PPM_PULSE_START;
-	conf->app_ppm_conf.pulse_end = APPCONF_PPM_PULSE_END;
-	conf->app_ppm_conf.pulse_center = APPCONF_PPM_PULSE_CENTER;
-	conf->app_ppm_conf.median_filter = APPCONF_PPM_MEDIAN_FILTER;
-	conf->app_ppm_conf.safe_start = APPCONF_PPM_SAFE_START;
-	conf->app_ppm_conf.throttle_exp = APPCONF_PPM_THROTTLE_EXP;
-	conf->app_ppm_conf.throttle_exp_brake = APPCONF_PPM_THROTTLE_EXP_BRAKE;
-	conf->app_ppm_conf.throttle_exp_mode = APPCONF_PPM_THROTTLE_EXP_MODE;
-	conf->app_ppm_conf.ramp_time_pos = APPCONF_PPM_RAMP_TIME_POS;
-	conf->app_ppm_conf.ramp_time_neg = APPCONF_PPM_RAMP_TIME_NEG;
-	conf->app_ppm_conf.multi_esc = APPCONF_PPM_MULTI_ESC;
-	conf->app_ppm_conf.tc = APPCONF_PPM_TC;
-	conf->app_ppm_conf.tc_max_diff = APPCONF_PPM_TC_MAX_DIFF;
-	conf->app_ppm_conf.max_erpm_for_dir = APPCONF_PPM_MAX_ERPM_FOR_DIR;
-	conf->app_ppm_conf.smart_rev_max_duty = APPCONF_PPM_SMART_REV_MAX_DUTY;
-	conf->app_ppm_conf.smart_rev_ramp_time = APPCONF_PPM_SMART_REV_RAMP_TIME;
-	conf->app_adc_conf.ctrl_type = APPCONF_ADC_CTRL_TYPE;
-	conf->app_adc_conf.hyst = APPCONF_ADC_HYST;
-	conf->app_adc_conf.voltage_start = APPCONF_ADC_VOLTAGE_START;
-	conf->app_adc_conf.voltage_end = APPCONF_ADC_VOLTAGE_END;
-	conf->app_adc_conf.voltage_min = APPCONF_ADC_VOLTAGE_MIN;
-	conf->app_adc_conf.voltage_max = APPCONF_ADC_VOLTAGE_MAX;
-	conf->app_adc_conf.voltage_center = APPCONF_ADC_VOLTAGE_CENTER;
-	conf->app_adc_conf.voltage2_start = APPCONF_ADC_VOLTAGE2_START;
-	conf->app_adc_conf.voltage2_end = APPCONF_ADC_VOLTAGE2_END;
-	conf->app_adc_conf.use_filter = APPCONF_ADC_USE_FILTER;
-	conf->app_adc_conf.safe_start = APPCONF_ADC_SAFE_START;
-	conf->app_adc_conf.buttons = APPCONF_ADC_BUTTONS;
-	conf->app_adc_conf.voltage_inverted = APPCONF_ADC_VOLTAGE_INVERTED;
-	conf->app_adc_conf.voltage2_inverted = APPCONF_ADC_VOLTAGE2_INVERTED;
-	conf->app_adc_conf.throttle_exp = APPCONF_ADC_THROTTLE_EXP;
-	conf->app_adc_conf.throttle_exp_brake = APPCONF_ADC_THROTTLE_EXP_BRAKE;
-	conf->app_adc_conf.throttle_exp_mode = APPCONF_ADC_THROTTLE_EXP_MODE;
-	conf->app_adc_conf.ramp_time_pos = APPCONF_ADC_RAMP_TIME_POS;
-	conf->app_adc_conf.ramp_time_neg = APPCONF_ADC_RAMP_TIME_NEG;
-	conf->app_adc_conf.multi_esc = APPCONF_ADC_MULTI_ESC;
-	conf->app_adc_conf.tc = APPCONF_ADC_TC;
-	conf->app_adc_conf.tc_max_diff = APPCONF_ADC_TC_MAX_DIFF;
-	conf->app_adc_conf.update_rate_hz = APPCONF_ADC_UPDATE_RATE_HZ;
-	conf->app_uart_baudrate = APPCONF_UART_BAUDRATE;
-	conf->app_chuk_conf.ctrl_type = APPCONF_CHUK_CTRL_TYPE;
-	conf->app_chuk_conf.hyst = APPCONF_CHUK_HYST;
-	conf->app_chuk_conf.ramp_time_pos = APPCONF_CHUK_RAMP_TIME_POS;
-	conf->app_chuk_conf.ramp_time_neg = APPCONF_CHUK_RAMP_TIME_NEG;
-	conf->app_chuk_conf.stick_erpm_per_s_in_cc = APPCONF_STICK_ERPM_PER_S_IN_CC;
-	conf->app_chuk_conf.throttle_exp = APPCONF_CHUK_THROTTLE_EXP;
-	conf->app_chuk_conf.throttle_exp_brake = APPCONF_CHUK_THROTTLE_EXP_BRAKE;
-	conf->app_chuk_conf.throttle_exp_mode = APPCONF_CHUK_THROTTLE_EXP_MODE;
-	conf->app_chuk_conf.multi_esc = APPCONF_CHUK_MULTI_ESC;
-	conf->app_chuk_conf.tc = APPCONF_CHUK_TC;
-	conf->app_chuk_conf.tc_max_diff = APPCONF_CHUK_TC_MAX_DIFF;
-	conf->app_chuk_conf.use_smart_rev = APPCONF_CHUK_USE_SMART_REV;
-	conf->app_chuk_conf.smart_rev_max_duty = APPCONF_CHUK_SMART_REV_MAX_DUTY;
-	conf->app_chuk_conf.smart_rev_ramp_time = APPCONF_CHUK_SMART_REV_RAMP_TIME;
-	conf->app_nrf_conf.speed = APPCONF_NRF_SPEED;
-	conf->app_nrf_conf.power = APPCONF_NRF_POWER;
-	conf->app_nrf_conf.crc_type = APPCONF_NRF_CRC;
-	conf->app_nrf_conf.retry_delay = APPCONF_NRF_RETR_DELAY;
-	conf->app_nrf_conf.retries = APPCONF_NRF_RETRIES;
-	conf->app_nrf_conf.channel = APPCONF_NRF_CHANNEL;
-	conf->app_nrf_conf.address[0] = APPCONF_NRF_ADDR_B0;
-	conf->app_nrf_conf.address[1] = APPCONF_NRF_ADDR_B1;
-	conf->app_nrf_conf.address[2] = APPCONF_NRF_ADDR_B2;
-	conf->app_nrf_conf.send_crc_ack = APPCONF_NRF_SEND_CRC_ACK;
-	conf->app_pas_conf.ctrl_type = APPCONF_PAS_CTRL_TYPE;
-	conf->app_pas_conf.sensor_type = APPCONF_PAS_SENSOR_TYPE;
-	conf->app_pas_conf.current_scaling = APPCONF_PAS_CURRENT_SCALING;
-	conf->app_pas_conf.pedal_rpm_start = APPCONF_PAS_PEDAL_RPM_START;
-	conf->app_pas_conf.pedal_rpm_end = APPCONF_PAS_PEDAL_RPM_END;
-	conf->app_pas_conf.invert_pedal_direction = APPCONF_PAS_INVERT_PEDAL_DIRECTION;
-	conf->app_pas_conf.magnets = APPCONF_PAS_MAGNETS;
-	conf->app_pas_conf.use_filter = APPCONF_PAS_USE_FILTER;
-	conf->app_pas_conf.ramp_time_pos = APPCONF_PAS_RAMP_TIME_POS;
-	conf->app_pas_conf.ramp_time_neg = APPCONF_PAS_RAMP_TIME_NEG;
-	conf->app_pas_conf.update_rate_hz = APPCONF_PAS_UPDATE_RATE_HZ;
-	conf->imu_conf.type = APPCONF_IMU_TYPE;
-	conf->imu_conf.mode = APPCONF_IMU_AHRS_MODE;
-	conf->imu_conf.filter = APPCONF_IMU_FILTER;
-	conf->imu_conf.accel_lowpass_filter_x = APPCONF_IMU_ACCEL_LOWPASS_FILTER_X;
-	conf->imu_conf.accel_lowpass_filter_y = APPCONF_IMU_ACCEL_LOWPASS_FILTER_Y;
-	conf->imu_conf.accel_lowpass_filter_z = APPCONF_IMU_ACCEL_LOWPASS_FILTER_Z;
-	conf->imu_conf.gyro_lowpass_filter = APPCONF_IMU_GYRO_LOWPASS_FILTER;
-	conf->imu_conf.sample_rate_hz = APPCONF_IMU_SAMPLE_RATE_HZ;
-	conf->imu_conf.use_magnetometer = APPCONF_IMU_USE_MAGNETOMETER;
-	conf->imu_conf.accel_confidence_decay = APPCONF_IMU_ACCEL_CONFIDENCE_DECAY;
-	conf->imu_conf.mahony_kp = APPCONF_IMU_MAHONY_KP;
-	conf->imu_conf.mahony_ki = APPCONF_IMU_MAHONY_KI;
-	conf->imu_conf.madgwick_beta = APPCONF_IMU_MADGWICK_BETA;
-	conf->imu_conf.rot_roll = APPCONF_IMU_ROT_ROLL;
-	conf->imu_conf.rot_pitch = APPCONF_IMU_ROT_PITCH;
-	conf->imu_conf.rot_yaw = APPCONF_IMU_ROT_YAW;
-	conf->imu_conf.accel_offsets[0] = APPCONF_IMU_A_OFFSET_0;
-	conf->imu_conf.accel_offsets[1] = APPCONF_IMU_A_OFFSET_1;
-	conf->imu_conf.accel_offsets[2] = APPCONF_IMU_A_OFFSET_2;
-	conf->imu_conf.gyro_offsets[0] = APPCONF_IMU_G_OFFSET_0;
-	conf->imu_conf.gyro_offsets[1] = APPCONF_IMU_G_OFFSET_1;
-	conf->imu_conf.gyro_offsets[2] = APPCONF_IMU_G_OFFSET_2;
-}

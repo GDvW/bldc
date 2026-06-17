@@ -432,6 +432,9 @@ typedef struct {
 	bool dc_enable_parking_brake;
 	float dc_parking_brake_current;
 
+	uint16_t rpm_filter_cutoff;
+	float min_current_pll_detection;
+
 	// Sensorless (bldc)
 	float sl_min_erpm;
 	float sl_min_erpm_cycle_int_limit;
