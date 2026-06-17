@@ -146,6 +146,11 @@ static volatile float rpm_unfiltered;
 // Ripple (speed) detection vars
 static volatile float ripple_frequency;
 
+// RPM thread
+static THD_WORKING_AREA(speed_thread_wa, 512);
+static THD_FUNCTION(speed_pid_thread, arg);
+static volatile bool speed_pid_thd_stop;
+
 // Private functions
 static void set_duty_cycle_hl(float dutycycle);
 static void set_duty_cycle_ll(float dutycycle);
@@ -164,6 +169,7 @@ static void set_switching_frequency(float frequency);
 static void full_brake_hw(void);
 static void full_brake_ll(void);
 static float ripple_to_rpm(float frequency);
+static void run_pid_control_speed(float dt);
 
 // Initializes the motor controller
 void mcpwm_dc_init(volatile mc_configuration *configuration)
@@ -466,6 +472,16 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
     DCCAL_OFF();
     do_dc_cal();
 
+    // Start rpm thread
+    speed_pid_thd_stop = false;
+    chThdCreateStatic(speed_thread_wa, sizeof(speed_thread_wa), NORMALPRIO, speed_pid_thread, NULL);
+
+    // Check if the system has resumed from IWDG reset
+    if (timeout_had_IWDG_reset())
+    {
+        mc_interface_fault_stop(FAULT_CODE_BOOTING_FROM_WATCHDOG_RESET, false, false);
+    }
+
     init_done = true;
 }
 
@@ -478,12 +494,151 @@ void mcpwm_dc_deinit(void)
 
     init_done = false;
 
+    speed_pid_thd_stop = true;
+
+    while (speed_pid_thd_stop)
+    {
+        chThdSleepMilliseconds(1);
+    }
+
     TIM_DeInit(TIM1);
     TIM_DeInit(TIM8);
     ADC_DeInit();
     DMA_DeInit(DMA2_Stream4);
     nvicDisableVector(ADC_IRQn);
     dmaStreamRelease(STM32_DMA_STREAM(STM32_DMA_STREAM_ID(2, 4)));
+}
+
+static THD_FUNCTION(speed_pid_thread, arg)
+{
+    (void)arg;
+
+    chRegSetThreadName("dc speed pid");
+    uint32_t last_time = timer_time_now();
+
+    for (;;)
+    {
+        if (speed_pid_thd_stop)
+        {
+            speed_pid_thd_stop = false;
+            return;
+        }
+
+        switch (conf->sp_pid_loop_rate)
+        {
+        case PID_RATE_25_HZ:
+            chThdSleepMicroseconds(1000000 / 25);
+            break;
+        case PID_RATE_50_HZ:
+            chThdSleepMicroseconds(1000000 / 50);
+            break;
+        case PID_RATE_100_HZ:
+            chThdSleepMicroseconds(1000000 / 100);
+            break;
+        case PID_RATE_250_HZ:
+            chThdSleepMicroseconds(1000000 / 250);
+            break;
+        case PID_RATE_500_HZ:
+            chThdSleepMicroseconds(1000000 / 500);
+            break;
+        case PID_RATE_1000_HZ:
+            chThdSleepMicroseconds(1000000 / 1000);
+            break;
+        case PID_RATE_2500_HZ:
+            chThdSleepMicroseconds(1000000 / 2500);
+            break;
+        case PID_RATE_5000_HZ:
+            chThdSleepMicroseconds(1000000 / 5000);
+            break;
+        case PID_RATE_10000_HZ:
+            chThdSleepMicroseconds(1000000 / 10000);
+            break;
+        }
+
+        float dt = timer_seconds_elapsed_since(last_time);
+        last_time = timer_time_now();
+
+        run_pid_control_speed(dt);
+    }
+}
+
+static void run_pid_control_speed(float dt)
+{
+    static float i_term = 0;
+    static float p_term = 0;
+    static float d_term = 0;
+    static float d_term_filter = 0;
+    static float prev_error = 0;
+
+    // PID is off. Return.
+    if (control_mode != CONTROL_MODE_SPEED)
+    {
+        i_term = 0.0;
+        prev_error = 0.0;
+        return;
+    }
+
+    float rpm = mcpwm_dc_get_rpm();
+    float error = speed_pid_set_rpm - rpm;
+
+    // Too low RPM set. Reset state, release motor and return.
+    if (fabsf(speed_pid_set_rpm) < conf->s_pid_min_erpm)
+    {
+        i_term = 0.0;
+        prev_error = error;
+        current_set = 0;
+        return;
+    }
+
+    // PID with proper dt
+    // Apply  * (1.0 / 20.0) to normalize. 
+    // FOC uses these values, so to reuse the values from the config, also do that here
+    p_term = error * conf->s_pid_kp * (1.0 / 20.0);
+    i_term += error * conf->s_pid_ki * dt * (1.0 / 20.0);
+    utils_truncate_number_abs(&i_term, 1.0);
+
+    d_term = (error - prev_error) * (conf->s_pid_kd / dt) * (1.0 / 20.0);
+    // Filter D
+    UTILS_LP_FAST(d_term_filter, d_term, conf->s_pid_kd_filter);
+    d_term = d_term_filter;
+
+    // Store previous error
+    prev_error = error;
+
+    // Calculate output
+    float output = p_term + i_term + d_term;
+    utils_truncate_number_abs(&output, 1.0);
+
+    // Integrator windup protection
+
+    if (conf->s_pid_ki < 1e-9)
+    {
+        i_term = 0.0;
+    }
+
+    // Optionally disable braking
+    if (!conf->s_pid_allow_braking)
+    {
+        if (rpm > 20.0 && output < 0.0)
+        {
+            output = 0.0;
+        }
+
+        if (rpm < -20.0 && output > 0.0)
+        {
+            output = 0.0;
+        }
+    }
+
+    float current_set_tmp = output * conf->lo_current_max * conf->l_current_max_scale;
+
+    utils_truncate_number(&current_set_tmp, conf->lo_current_min, conf->lo_current_max);
+
+    current_set = current_set_tmp;
+
+    if (state != MC_STATE_RUNNING) {  
+        set_duty_cycle_hl(SIGN(output) * conf->l_min_duty);  
+    }
 }
 
 bool mcpwm_dc_init_done(void)
@@ -783,20 +938,6 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
         }
 
         float dutycycle_now_tmp = dutycycle_now;
-
-        if (control_mode == CONTROL_MODE_SPEED)
-        {
-            const float speed_error = speed_pid_set_rpm - mcpwm_dc_get_rpm();
-            // Simple PI controller for speed
-            static float speed_integral = 0.0;
-            speed_integral += speed_error * 0.001; // Integration time step
-            float speed_output = speed_error * conf->s_pid_kp + speed_integral * conf->s_pid_ki;
-
-            // Convert speed output to current setpoint
-            current_set = speed_output;
-            // Then use existing current control logic
-            // done below
-        }
 
         if (control_mode == CONTROL_MODE_CURRENT ||
             control_mode == CONTROL_MODE_POS ||
