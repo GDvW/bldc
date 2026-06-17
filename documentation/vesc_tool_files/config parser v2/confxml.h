@@ -8,7 +8,7 @@
 #include <stdbool.h>
 
 // Constants
-#define DATA_CONFGENERATOR__SIZE		31885
+#define DATA_CONFGENERATOR__SIZE		32024
 
 // Variables
 extern uint8_t data_confgenerator_[];

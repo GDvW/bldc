@@ -214,6 +214,7 @@ int32_t confparser_serialize_confgenerator(uint8_t *buffer, const confgenerator 
 	buffer[ind++] = conf->bms.fwd_can_mode;
 	buffer_append_uint16(buffer, conf->rpm_filter_cutoff, &ind);
 	buffer_append_float32_auto(buffer, conf->min_current_pll_detection, &ind);
+	buffer_append_uint16(buffer, conf->current_filter_cutoff_pll, &ind);
 
 	return ind;
 }
@@ -430,6 +431,7 @@ bool confparser_deserialize_confgenerator(const uint8_t *buffer, confgenerator *
 	conf->bms.fwd_can_mode = buffer[ind++];
 	conf->rpm_filter_cutoff = buffer_get_uint16(buffer, &ind);
 	conf->min_current_pll_detection = buffer_get_float32_auto(buffer, &ind);
+	conf->current_filter_cutoff_pll = buffer_get_uint16(buffer, &ind);
 
 	return true;
 }
@@ -639,5 +641,6 @@ void confparser_set_defaults_confgenerator(confgenerator *conf) {
 	conf->bms.fwd_can_mode = MCCONF_BMS_FWD_CAN_MODE;
 	conf->rpm_filter_cutoff = 20;
 	conf->min_current_pll_detection = 0.05;
+	conf->current_filter_cutoff_pll = 250;
 }
 

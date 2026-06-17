@@ -1013,6 +1013,11 @@
 #define 0.05 0.05
 #endif
 
+// Cutoff frequency DC filter for pll
+#ifndef 250
+#define 250 250
+#endif
+
 // CONF_DEFAULT_H_
 #endif
 

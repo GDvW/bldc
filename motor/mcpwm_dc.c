@@ -133,9 +133,6 @@ static volatile float amp_fir_coeffs[AMP_FIR_LEN];
 static volatile float amp_fir_samples[AMP_FIR_LEN];
 static volatile int amp_fir_index = 0;
 
-// TODO: Convert to configurable
-#define PLL_KP 50000
-#define PLL_KI 1000000
 // Owned by mcpwm_dc_adc_inj_int_handler
 static mc_dc_filter_struct current_dc_filter;
 
@@ -204,7 +201,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
 
     // current dc filter init
     // TODO: make this configurable
-    alpha_rpm = expf(-2.0f * (float)M_PI * 20 /*f_cut*/ / conf->m_dc_f_sw);
+    alpha_rpm = expf(-2.0f * (float)M_PI * conf->rpm_filter_cutoff / conf->m_dc_f_sw);
     current_dc_filter.alpha = expf(-2.0f * (float)M_PI * 250 /*f_cut*/ / conf->m_dc_f_sw);
     current_dc_filter.state1 = 0;
     current_dc_filter.state2 = 0;
@@ -817,8 +814,8 @@ void mcpwm_dc_adc_inj_int_handler(void)
 
         float dt = 1.0f / switching_frequency_now;
 
-        float pll_ki_dt = PLL_KI * dt;
-        float pll_kp_dt = PLL_KP * dt;
+        float pll_ki_dt = conf->foc_pll_ki * dt;
+        float pll_kp_dt = conf->foc_pll_kp * dt;
 
         // Update PLL
         pll_speed += phase_error * pll_ki_dt;

@@ -433,6 +433,7 @@ typedef struct {
 	float dc_parking_brake_current;
 
 	uint16_t rpm_filter_cutoff;
+	uint16_t current_filter_cutoff_pll;
 	float min_current_pll_detection;
 
 	// Sensorless (bldc)

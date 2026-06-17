@@ -8,8 +8,8 @@
 #include <stdbool.h>
 
 // Constants
-#define CONFGENERATOR_SIGNATURE		1267460557
-#define SERIALIZED_CONFIG_LENGTH	494
+#define CONFGENERATOR_SIGNATURE		729639349
+#define SERIALIZED_CONFIG_LENGTH	496
 
 // Functions
 int32_t confparser_serialize_confgenerator(uint8_t *buffer, const confgenerator *conf);
