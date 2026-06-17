@@ -808,7 +808,7 @@ void mcpwm_dc_adc_inj_int_handler(void)
         float ripple_signal = last_current_sample - i_dc;
 
         // Phase detector: multiply by quadrature signal
-        float phase_error = ripple_signal * sinf(pll_phase);
+        float phase_error = ripple_signal * cosf(pll_phase);
 
         float dt = 1.0f / switching_frequency_now;
 

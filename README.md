@@ -146,3 +146,11 @@ git push --tags
 ## License
 
 The software is released under the GNU General Public License version 3.0
+
+## Default values PLL Brushed DC
+
+PLL KP: 50000
+PLL KI: 1000000
+Minimal current for PLL: 0,0500 A
+RPM filter cutoff: 20Hz
+Current filter cutoff: 250Hz
