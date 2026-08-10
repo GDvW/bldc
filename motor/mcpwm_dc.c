@@ -587,7 +587,7 @@ static void run_pid_control_speed(float dt)
     }
 
     // PID with proper dt
-    // Apply  * (1.0 / 20.0) to normalize. 
+    // Apply  * (1.0 / 20.0) to normalize.
     // FOC uses these values, so to reuse the values from the config, also do that here
     p_term = error * conf->s_pid_kp * (1.0 / 20.0);
     i_term += error * conf->s_pid_ki * dt * (1.0 / 20.0);
@@ -632,8 +632,9 @@ static void run_pid_control_speed(float dt)
 
     current_set = current_set_tmp;
 
-    if (state != MC_STATE_RUNNING) {  
-        set_duty_cycle_hl(SIGN(output) * conf->l_min_duty);  
+    if (state != MC_STATE_RUNNING)
+    {
+        set_duty_cycle_hl(SIGN(output) * conf->l_min_duty);
     }
 }
 
@@ -832,6 +833,10 @@ void mcpwm_dc_adc_inj_int_handler(void)
         rpm_unfiltered = ripple_to_rpm(fabsf(ripple_frequency));
         // Perform low pass
         rpm_now = alpha_rpm * rpm_now + (1.0f - alpha_rpm) * rpm_unfiltered;
+    }
+    else
+    {
+        rpm_now = 0;
     }
 
     last_inj_adc_isr_duration = timer_seconds_elapsed_since(t_start);
