@@ -1,3 +1,8 @@
+/**
+ * This file contains all getter/setter functions that are used by the outside world (outside the mcpwm_dc folder)
+ * Actual logic should not be here.
+ */
+
 #include "mcpwm_dc.h"
 #include "mcpwm_dc_locals.h"
 
@@ -14,17 +19,17 @@ void mcpwm_dc_set_current(float current)
     current_set = current;
 }
 
-void mcpwm_dc_set_duty(float dutyCycle)
+void mcpwm_dc_set_duty(float duty_cycle)
 {
     control_mode = CONTROL_MODE_DUTY;
-    dutycycle_set = dutyCycle;
+    mcpwm_dc_set_duty_cleaned(duty_cycle);
 }
 
 // TODO: Temporarily the same, but will change it
-void mcpwm_dc_set_duty_noramp(float dutyCycle)
+void mcpwm_dc_set_duty_noramp(float duty_cycle)
 {
     control_mode = CONTROL_MODE_DUTY;
-    dutycycle_set = dutyCycle;
+    mcpwm_dc_set_duty_cleaned(duty_cycle);
 }
 
 void mcpwm_dc_set_pid_speed(float rpm)
