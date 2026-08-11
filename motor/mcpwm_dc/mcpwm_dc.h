@@ -12,8 +12,7 @@ bool mcpwm_dc_init_done(void);
 void mcpwm_dc_set_configuration(volatile mc_configuration *configuration);
 void mcpwm_dc_adc_inj_int_handler(void);
 
-void mcpwm_dc_set_parking_brake_current(float dutyCycle);
-void mcpwm_dc_set_brake_current(float current);
+void mcpwm_dc_set_parking_brake_current(bool output_enabled);
 void mcpwm_dc_set_current(float current);
 void mcpwm_dc_set_duty(float dutyCycle);
 void mcpwm_dc_set_duty_noramp(float dutyCycle);
