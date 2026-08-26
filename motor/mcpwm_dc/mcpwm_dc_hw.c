@@ -20,6 +20,16 @@
 #include "mcpwm_dc_locals.h"
 #include "mcpwm_dc_hw.h"
 
+static volatile int curr0_sum;
+static volatile int curr1_sum;
+static volatile int curr_start_samples;
+static volatile int curr0_offset;
+static volatile int curr1_offset;
+#ifdef HW_HAS_3_SHUNTS
+static volatile int curr2_sum;
+static volatile int curr2_offset;
+#endif
+
 
 void mcpwm_dc_init_hw()
 {
@@ -138,7 +148,7 @@ void mcpwm_dc_init_hw()
     DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord; // 16-bit ADC values
     DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;
     DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;        // Continuous sampling
-    DMA_InitStructure.DMA_Priority = DMA_Priority_High;    // ADC timing is critical
+    DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;    // ADC timing is critical
     DMA_InitStructure.DMA_FIFOMode = DMA_FIFOMode_Disable; // Direct mode
     DMA_InitStructure.DMA_FIFOThreshold = DMA_FIFOThreshold_1QuarterFull;
     DMA_InitStructure.DMA_MemoryBurst = DMA_MemoryBurst_Single;
@@ -257,4 +267,187 @@ void mcpwm_dc_init_hw()
 
     // Main Output Enable
     TIM_CtrlPWMOutputs(TIM1, ENABLE);
+
+    // ADC sampling locations
+    stop_pwm_hw();
+    mc_timer_struct timer_tmp;
+    timer_tmp.top = TIM1->ARR;
+    timer_tmp.duty_motor = TIM1->ARR / 2;
+    update_adc_sample_pos(&timer_tmp);
+    set_next_timer_settings(&timer_tmp);
+
+    utils_sys_unlock_cnt();
+
+    CURRENT_FILTER_ON();
+    CURRENT_FILTER_ON_M2();
+
+    // Calibrate current offset
+    ENABLE_GATE();
+    DCCAL_OFF();
+    do_dc_cal();
+}
+
+void mcpwm_dc_init_hw(){
+    TIM_DeInit(TIM1);
+    TIM_DeInit(TIM8);
+    ADC_DeInit();
+    DMA_DeInit(DMA2_Stream4);
+    nvicDisableVector(ADC_IRQn);
+    dmaStreamRelease(STM32_DMA_STREAM(STM32_DMA_STREAM_ID(2, 4)));
+}
+
+// Calculate the dc levels in the current measurement when the motor is off
+// To compensate for this when running
+void do_dc_cal(void)
+{
+    DCCAL_ON();
+
+    // Wait max 5 seconds
+    int cnt = 0;
+    while (IS_DRV_FAULT())
+    {
+        chThdSleepMilliseconds(1);
+        cnt++;
+        if (cnt > 5000)
+        {
+            break;
+        }
+    };
+
+    chThdSleepMilliseconds(1000);
+    // Reset all current measurement counters
+    curr0_sum = 0;
+    curr1_sum = 0;
+
+#ifdef HW_HAS_3_SHUNTS
+    curr2_sum = 0;
+#endif
+
+    // Wait till 4000 samples have been taken
+    curr_start_samples = 0;
+    while (curr_start_samples < 4000)
+    {
+    };
+
+    // Average it out
+    curr0_offset = curr0_sum / curr_start_samples;
+    curr1_offset = curr1_sum / curr_start_samples;
+
+#ifdef HW_HAS_3_SHUNTS
+    curr2_offset = curr2_sum / curr_start_samples;
+#endif
+
+    DCCAL_OFF();
+    dccal_done = true;
+}
+
+//  Updates timer_struct from the passed settings
+void set_next_timer_settings(mc_timer_struct *settings)
+{
+    utils_sys_lock_cnt();
+    timer_struct = *settings;
+    timer_struct.updated = false;
+    utils_sys_unlock_cnt();
+
+    update_timer_attempt();
+}
+
+// Applies the timer settings set in timer_struct
+void update_timer_attempt(void)
+{
+    utils_sys_lock_cnt();
+
+    // Set the next timer settings if an update is far enough away
+    if (!timer_struct.updated && TIM1->CNT > 10 && TIM1->CNT < (TIM1->ARR - 500))
+    {
+        // Disable preload register updates
+        TIM1->CR1 |= TIM_CR1_UDIS;
+        TIM8->CR1 |= TIM_CR1_UDIS;
+
+        // Set the new configuration
+        TIM1->ARR = timer_struct.top;
+        TIM1->CCR1 = timer_struct.duty_motor;
+        TIM1->CCR2 = timer_struct.duty_brake;
+        TIM1->CCR3 = timer_struct.duty_motor;
+        TIM8->CCR1 = timer_struct.val_sample;
+        TIM1->CCR4 = timer_struct.curr1_sample;
+        TIM8->CCR2 = timer_struct.curr2_sample;
+#ifdef HW_HAS_3_SHUNTS
+        TIM8->CCR3 = timer_struct.curr3_sample;
+#endif
+
+        // Enables preload register updates
+        TIM1->CR1 &= ~TIM_CR1_UDIS;
+        TIM8->CR1 &= ~TIM_CR1_UDIS;
+        timer_struct.updated = true;
+    }
+
+    utils_sys_unlock_cnt();
+}
+
+// Choose at which point during the PWM cycle voltage and current samples are taken
+void update_adc_sample_pos(mc_timer_struct *t)
+{
+    uint32_t duty_motor = t->duty_motor;
+    uint32_t duty_brake = t->duty_brake;
+    const uint32_t top = t->top;
+
+    // Clamp duty
+    const uint32_t max_duty = (uint32_t)((float)top * conf->l_max_duty);
+    if (duty_motor > max_duty)
+    {
+        duty_motor = max_duty;
+    }
+    if (duty_brake > max_duty)
+    {
+        duty_brake = max_duty;
+    }
+
+    // TODO: Look into this
+    // Only measure phase 1 and 3 at the same moment as the voltage.
+    curr_samp_volt = (1u << 0) | (1u << 2);
+
+    // Current sampling logic. Choosing a point where to sample the currents
+    // TODO: Look whether midpoint is a good choice, also for low RPM's
+    const uint32_t current_sample_point_motor = duty_motor / 2;
+    const uint32_t current_sample_point_brake = duty_brake / 2;
+    t->curr1_sample = current_sample_point_motor;
+    t->curr2_sample = current_sample_point_brake;
+#ifdef HW_HAS_3_SHUNTS
+    t->curr3_sample = current_sample_point_motor;
+#endif
+
+    // Voltage sampling logic
+    if (duty_motor > 1000)
+    {
+        t->val_sample = duty_motor / 2;
+    }
+    else
+    {
+        t->val_sample = duty_motor + 800;
+    }
+}
+
+// Stop all pwm on all gates
+void stop_pwm_hw(void)
+{
+#ifdef HW_HAS_DRV8313
+    DISABLE_BR();
+#endif
+
+    TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_ForcedAction_InActive);
+    TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
+    TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Disable);
+
+    TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
+    TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+    TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
+
+    TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_ForcedAction_InActive);
+    TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
+    TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Disable);
+
+    TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
+
+    set_switching_frequency(conf->m_bldc_f_sw_max);
 }

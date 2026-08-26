@@ -97,3 +97,17 @@ bool mcpwm_dc_is_dccal_done(void)
 {
     return dccal_done;
 }
+
+bool mcpwm_dc_init_done(void)
+{
+    return init_done;
+}
+
+/**
+ * Stops all PWM outputs
+ */
+void mcpwm_dc_stop_pwm(void)
+{
+    control_mode = CONTROL_MODE_NONE;
+    // TODO: Actually stop the motor
+}
