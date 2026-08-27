@@ -32,12 +32,15 @@ extern volatile mc_state state;
 extern volatile bool init_done; 
 extern volatile bool dccal_done;
 extern volatile float last_adc_isr_duration;
+extern volatile float last_adc_inj_isr_duration;
 
 extern volatile mc_configuration *conf;
 
 void mcpwm_dc_init_locals(void);
 
 void mcpwm_dc_set_duty_cleaned(float duty_cycle);
+void read_currents_raw(int curr_adc_source_mask, float *curr0, float *curr1, float *curr2);
+void process_current_measurements(float curr0, float curr1, float curr2);
 
 // Filters
 // Current FIR filter

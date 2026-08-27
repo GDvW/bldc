@@ -20,15 +20,6 @@
 #include "mcpwm_dc_locals.h"
 #include "mcpwm_dc_hw.h"
 
-static volatile int curr0_sum;
-static volatile int curr1_sum;
-static volatile int curr_start_samples;
-static volatile int curr0_offset;
-static volatile int curr1_offset;
-#ifdef HW_HAS_3_SHUNTS
-static volatile int curr2_sum;
-static volatile int curr2_offset;
-#endif
 
 
 void mcpwm_dc_init_hw()
@@ -147,9 +138,9 @@ void mcpwm_dc_init_hw()
     DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;                     // Increment buffer pointer
     DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_HalfWord; // 16-bit ADC values
     DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_HalfWord;
-    DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;        // Continuous sampling
-    DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;    // ADC timing is critical
-    DMA_InitStructure.DMA_FIFOMode = DMA_FIFOMode_Disable; // Direct mode
+    DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;         // Continuous sampling
+    DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh; // ADC timing is critical
+    DMA_InitStructure.DMA_FIFOMode = DMA_FIFOMode_Disable;  // Direct mode
     DMA_InitStructure.DMA_FIFOThreshold = DMA_FIFOThreshold_1QuarterFull;
     DMA_InitStructure.DMA_MemoryBurst = DMA_MemoryBurst_Single;
     DMA_InitStructure.DMA_PeripheralBurst = DMA_PeripheralBurst_Single;
@@ -287,58 +278,14 @@ void mcpwm_dc_init_hw()
     do_dc_cal();
 }
 
-void mcpwm_dc_init_hw(){
+void mcpwm_dc_init_hw()
+{
     TIM_DeInit(TIM1);
     TIM_DeInit(TIM8);
     ADC_DeInit();
     DMA_DeInit(DMA2_Stream4);
     nvicDisableVector(ADC_IRQn);
     dmaStreamRelease(STM32_DMA_STREAM(STM32_DMA_STREAM_ID(2, 4)));
-}
-
-// Calculate the dc levels in the current measurement when the motor is off
-// To compensate for this when running
-void do_dc_cal(void)
-{
-    DCCAL_ON();
-
-    // Wait max 5 seconds
-    int cnt = 0;
-    while (IS_DRV_FAULT())
-    {
-        chThdSleepMilliseconds(1);
-        cnt++;
-        if (cnt > 5000)
-        {
-            break;
-        }
-    };
-
-    chThdSleepMilliseconds(1000);
-    // Reset all current measurement counters
-    curr0_sum = 0;
-    curr1_sum = 0;
-
-#ifdef HW_HAS_3_SHUNTS
-    curr2_sum = 0;
-#endif
-
-    // Wait till 4000 samples have been taken
-    curr_start_samples = 0;
-    while (curr_start_samples < 4000)
-    {
-    };
-
-    // Average it out
-    curr0_offset = curr0_sum / curr_start_samples;
-    curr1_offset = curr1_sum / curr_start_samples;
-
-#ifdef HW_HAS_3_SHUNTS
-    curr2_offset = curr2_sum / curr_start_samples;
-#endif
-
-    DCCAL_OFF();
-    dccal_done = true;
 }
 
 //  Updates timer_struct from the passed settings
@@ -450,4 +397,18 @@ void stop_pwm_hw(void)
     TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
 
     set_switching_frequency(conf->m_bldc_f_sw_max);
+}
+
+void mcpwm_adc_inj_int_handler(void)
+{
+    // Start timer for time keeping
+    uint32_t t_start = timer_time_now();
+
+    // Do current measuring
+    float curr0, curr1, curr2;
+    // TODO: Add curr_volt etc here
+    read_currents_raw(&curr0, &curr1, &curr2);
+    process_current_measurements(curr0, curr1, curr2);
+
+    last_adc_inj_isr_duration = timer_seconds_elapsed_since(t_start);
 }
