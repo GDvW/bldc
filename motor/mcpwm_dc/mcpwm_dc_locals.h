@@ -39,7 +39,7 @@ extern volatile mc_configuration *conf;
 void mcpwm_dc_init_locals(void);
 
 void mcpwm_dc_set_duty_cleaned(float duty_cycle);
-void read_currents_raw(int curr_adc_source_mask, float *curr0, float *curr1, float *curr2);
+void read_currents_raw(float *curr0, float *curr1, float *curr2);
 void process_current_measurements(float curr0, float curr1, float curr2);
 
 // Filters

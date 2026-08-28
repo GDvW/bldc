@@ -58,7 +58,7 @@ void mcpwm_dc_deinit(void)
     mcpwm_dc_deinit_hw();
 }
 
-void mcpwm_set_configuration(volatile mc_configuration *configuration) {
+void mcpwm_dc_set_configuration(volatile mc_configuration *configuration) {
 	// Stop everything first to be safe
 	control_mode = CONTROL_MODE_NONE;
 	//stop_pwm_ll();
@@ -76,3 +76,4 @@ void mcpwm_dc_set_duty_cleaned(float duty_cycle)
 
     dutycycle_set = duty_cycle;
 }
+

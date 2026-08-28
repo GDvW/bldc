@@ -2,7 +2,22 @@
  * This file contains all getter/setter functions that are used by the outside world (outside the mcpwm_dc folder)
  * Actual logic should not be here.
  */
-
+#include "ch.h"
+#include "hal.h"
+#include "stm32f4xx_conf.h"
+#include <stdlib.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include "mc_interface.h"
+#include "digital_filter.h"
+#include "utils_math.h"
+#include "utils_sys.h"
+#include "ledpwm.h"
+#include "terminal.h"
+#include "timeout.h"
+#include "encoder/encoder.h"
+#include "timer.h"
 #include "mcpwm_dc.h"
 #include "mcpwm_dc_locals.h"
 

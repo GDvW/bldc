@@ -278,7 +278,7 @@ void mcpwm_dc_init_hw()
     do_dc_cal();
 }
 
-void mcpwm_dc_init_hw()
+void mcpwm_dc_deinit_hw(void)
 {
     TIM_DeInit(TIM1);
     TIM_DeInit(TIM8);
@@ -332,47 +332,19 @@ void update_timer_attempt(void)
     utils_sys_unlock_cnt();
 }
 
-// Choose at which point during the PWM cycle voltage and current samples are taken
-void update_adc_sample_pos(mc_timer_struct *t)
+void set_switching_frequency(float frequency)
 {
-    uint32_t duty_motor = t->duty_motor;
-    uint32_t duty_brake = t->duty_brake;
-    const uint32_t top = t->top;
+    switching_frequency_now = frequency;
 
-    // Clamp duty
-    const uint32_t max_duty = (uint32_t)((float)top * conf->l_max_duty);
-    if (duty_motor > max_duty)
-    {
-        duty_motor = max_duty;
-    }
-    if (duty_brake > max_duty)
-    {
-        duty_brake = max_duty;
-    }
+    mc_timer_struct timer_tmp;
 
-    // TODO: Look into this
-    // Only measure phase 1 and 3 at the same moment as the voltage.
-    curr_samp_volt = (1u << 0) | (1u << 2);
+    utils_sys_lock_cnt();
+    timer_tmp = timer_struct;
+    utils_sys_unlock_cnt();
 
-    // Current sampling logic. Choosing a point where to sample the currents
-    // TODO: Look whether midpoint is a good choice, also for low RPM's
-    const uint32_t current_sample_point_motor = duty_motor / 2;
-    const uint32_t current_sample_point_brake = duty_brake / 2;
-    t->curr1_sample = current_sample_point_motor;
-    t->curr2_sample = current_sample_point_brake;
-#ifdef HW_HAS_3_SHUNTS
-    t->curr3_sample = current_sample_point_motor;
-#endif
-
-    // Voltage sampling logic
-    if (duty_motor > 1000)
-    {
-        t->val_sample = duty_motor / 2;
-    }
-    else
-    {
-        t->val_sample = duty_motor + 800;
-    }
+    timer_tmp.top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
+    update_adc_sample_pos(&timer_tmp);
+    set_next_timer_settings(&timer_tmp);
 }
 
 // Stop all pwm on all gates
@@ -399,14 +371,13 @@ void stop_pwm_hw(void)
     set_switching_frequency(conf->m_bldc_f_sw_max);
 }
 
-void mcpwm_adc_inj_int_handler(void)
+void mcpwm_dc_adc_inj_int_handler(void)
 {
     // Start timer for time keeping
     uint32_t t_start = timer_time_now();
 
     // Do current measuring
     float curr0, curr1, curr2;
-    // TODO: Add curr_volt etc here
     read_currents_raw(&curr0, &curr1, &curr2);
     process_current_measurements(curr0, curr1, curr2);
 

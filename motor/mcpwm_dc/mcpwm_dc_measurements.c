@@ -24,6 +24,7 @@
 #include "mcpwm_dc_locals.h"
 #include "mcpwm_dc_hw.h"
 
+static volatile int curr_adc_source_mask;
 static volatile int curr_start_samples; 
 static volatile int curr0_sum;
 static volatile int curr1_sum;
@@ -80,11 +81,53 @@ void do_dc_cal(void)
     dccal_done = true;
 }
 
+// Choose at which point during the PWM cycle voltage and current samples are taken
+void update_adc_sample_pos(mc_timer_struct *t)
+{
+    uint32_t duty_motor = t->duty_motor;
+    uint32_t duty_brake = t->duty_brake;
+    const uint32_t top = t->top;
+
+    // Clamp duty
+    const uint32_t max_duty = (uint32_t)((float)top * conf->l_max_duty);
+    if (duty_motor > max_duty)
+    {
+        duty_motor = max_duty;
+    }
+    if (duty_brake > max_duty)
+    {
+        duty_brake = max_duty;
+    }
+
+    // Only measure phase 1 and 3 at the same moment as the voltage.
+    curr_adc_source_mask = (1u << 0) | (1u << 2);
+
+    // Current sampling logic. Choosing a point where to sample the currents
+    // TODO: Look whether midpoint is a good choice, also for low RPM's
+    const uint32_t current_sample_point_motor = duty_motor / 2;
+    const uint32_t current_sample_point_brake = duty_brake / 2;
+    t->curr1_sample = current_sample_point_motor;
+    t->curr2_sample = current_sample_point_brake;
+#ifdef HW_HAS_3_SHUNTS
+    t->curr3_sample = current_sample_point_motor;
+#endif
+
+    // Voltage sampling logic
+    if (duty_motor > 1000)
+    {
+        t->val_sample = duty_motor / 2;
+    }
+    else
+    {
+        t->val_sample = duty_motor + 800;
+    }
+}
+
 /** Reads the curernts based on the flag set in curr_adc_source_mask
  * If the first bit is set to 0, curr0 is taken at the moment specified in the timer
  * Else it is taken at the same moment as the voltage
  */
-void read_currents_raw(int curr_adc_source_mask, float *curr0, float *curr1, float *curr2)
+void read_currents_raw(float *curr0, float *curr1, float *curr2)
 {
     *curr0 = HW_GET_INJ_CURR1();
     *curr1 = HW_GET_INJ_CURR2();

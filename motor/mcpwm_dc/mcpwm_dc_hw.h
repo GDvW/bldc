@@ -35,7 +35,6 @@ typedef struct
 } mc_timer_struct;
 
 extern volatile mc_timer_struct timer_struct;
-extern volatile int curr_samp_volt; // Use the voltage-synchronized samples for this current sample
 
 void mcpwm_dc_init_hw(void);
 void mcpwm_dc_deinit_hw(void);
@@ -44,5 +43,6 @@ void update_timer_attempt(void);
 void stop_pwm_hw(void);
 void update_adc_sample_pos(mc_timer_struct *t);
 void do_dc_cal(void);
+void set_switching_frequency(float frequency);
 
 #endif
