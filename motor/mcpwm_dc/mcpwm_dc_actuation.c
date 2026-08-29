@@ -1,5 +1,5 @@
 /**
- * Contains setters that are local.
+ * Forms the bridge between the public setters and the control loop. 
  */
 #include "ch.h"
 #include "hal.h"
@@ -28,8 +28,10 @@ static void start_control_loop(float dutycycle);
 /**
  * Applies some checks and then sets the dutycycle. The control loop will take over this setpoint.
  * However when the motor is not in running state, make sure it enters that state (otherwise the control loop will neglect it)
+ * 
+ * Only used internally to set duty cycles
  */
-void mcpwm_dc_set_duty_internal_hl(float dutycycle)
+void mcpwm_dc_set_duty_hl(float dutycycle)
 {
     utils_truncate_number(&dutycycle, -conf->l_max_duty, conf->l_max_duty);
 
@@ -44,7 +46,7 @@ void mcpwm_dc_set_duty_internal_hl(float dutycycle)
 /**
  * Applies the duty cycle directly. This should only be used by the control loop and when starting the motor
  */
-void mcpwm_dc_set_duty_direct_ll(float dutycycle)
+void mcpwm_dc_set_duty_ll(float dutycycle)
 {
     // Determine the direction
     float dutycycle_abs = fabsf(dutycycle);
@@ -79,6 +81,7 @@ void stop_pwm_ll(void)
     state = MC_STATE_OFF;
     stop_pwm_hw();
 }
+
 void stop_pwm_motor_ll(void)
 {
     state = MC_STATE_OFF;
@@ -104,7 +107,7 @@ static void start_control_loop(float dutycycle)
             dutycycle_now = SIGN(dutycycle) * conf->l_min_duty;
         }
 
-        mcpwm_dc_set_duty_direct_ll(dutycycle_now);
+        mcpwm_dc_set_duty_ll(dutycycle_now);
     }
     else
     {

@@ -1,6 +1,6 @@
 /**
- * This file contains all high-level logic, so nothing to do with the hardware.
- * However, control loops and callbacks are not handled here.
+ * This file contains all module logic needed to run, so nothing to do with the hardware.
+ * Control loops and callbacks are not handled here.
  */
 
 #include "ch.h"
@@ -34,6 +34,7 @@ void mcpwm_dc_init(volatile mc_configuration *configuration)
     conf = configuration;
 
     mcpwm_dc_init_locals();
+    mcpwm_dc_init_measurements();
 
     mcpwm_dc_init_hw();
 
@@ -67,4 +68,3 @@ void mcpwm_dc_set_configuration(volatile mc_configuration *configuration) {
 	conf = configuration;
 	utils_sys_unlock_cnt();
 }
-

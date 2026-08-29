@@ -2,51 +2,65 @@
 #define MCWPM_DC_LOCAL
 
 #include "conf_general.h"
+#include "mcpwm_dc_hw.h"
 
 #define PARKING_BRAKE_ENABLED 1
 #define PARKING_BRAKE_CURRENT 500 // mA
 
-typedef enum {
+// Everything with locals
+void mcpwm_dc_init_locals(void);
+
+// Measurements
+void mcpwm_dc_init_measurements(void);
+void do_dc_cal(void);
+void update_adc_sample_pos(mc_timer_struct *t);
+void read_currents_raw(float *curr0, float *curr1, float *curr2);
+void process_current_measurements(float curr0, float curr1, float curr2);
+void take_motor_voltage_measurement(bool h_bridge_updated);
+
+// Actuation (bridge between public API and control loop)
+void mcpwm_dc_set_duty_hl(float dutycycle);
+void mcpwm_dc_set_duty_ll(float dutycycle);
+void stop_pwm_ll(void);
+void stop_pwm_motor_ll(void);
+void full_brake_ll(void);
+
+// Control loop
+void run_control_loop(void);
+
+typedef enum
+{
     DIRECTION_BACKWARD = 0,
     DIRECTION_FORWARD = 1
 } direction_t;
 
+// The motor configuration
+extern volatile mc_configuration *conf;
 // Control mode of device, e.g. speed, current or none
 extern volatile mc_control_mode control_mode;
+// State of device: running, full_brake or none
+extern volatile mc_state state;
 
+// Setpoints
 extern volatile float dutycycle_set;
 extern volatile float current_set;
 extern volatile float rpm_set;
 extern volatile bool parking_brake_output_set;
 
+// Real values
 extern volatile float dutycycle_now;
 extern volatile direction_t direction;
 extern volatile float switching_frequency_now;
 
+// Current measurements
 extern volatile float last_current_sample;
 extern volatile float last_current_sample_filtered;
 
-// State of device: running, full_brake or none
-extern volatile mc_state state;
-
-extern volatile bool init_done; 
+// Flags
+extern volatile bool init_done;
 extern volatile bool dccal_done;
 extern volatile float last_adc_isr_duration;
 extern volatile float last_adc_inj_isr_duration;
-
-extern volatile mc_configuration *conf;
-
-void mcpwm_dc_init_locals(void);
-
-void mcpwm_dc_set_duty_internal_hl(float dutycycle);
-void mcpwm_dc_set_duty_direct_ll(float dutycycle);
-void read_currents_raw(float *curr0, float *curr1, float *curr2);
-void process_current_measurements(float curr0, float curr1, float curr2);
-void take_motor_voltage_measurement(bool h_bridge_updated);
-void run_control_loop(void);
-void stop_pwm_ll(void);
-void full_brake_ll(void);
-void stop_pwm_motor_ll(void);
 
 // Filters
 // Current FIR filter
@@ -64,6 +78,5 @@ extern volatile int current_fir_index;
 extern volatile float amp_fir_coeffs[AMP_FIR_LEN];
 extern volatile float amp_fir_samples[AMP_FIR_LEN];
 extern volatile int amp_fir_index;
-
 
 #endif

@@ -4,6 +4,7 @@
 // Settings for the timers
 // PWM
 /**
+ * ```
  * Counter:
  * .......................  top/ARR
  *      /|    /|    /|    
@@ -19,6 +20,7 @@
  * | |   | |   | |   | |  
  * | |___| |___| |___| |__
  * -----------------------
+ * ```
  */
 typedef struct
 {
@@ -40,13 +42,12 @@ void mcpwm_dc_init_hw(void);
 void mcpwm_dc_deinit_hw(void);
 void set_next_timer_settings(mc_timer_struct *settings);
 void update_timer_attempt(void);
+void set_switching_frequency(float frequency);
 void stop_pwm_hw(void);
 void stop_pwm_motor_hw(void);
-void update_adc_sample_pos(mc_timer_struct *t);
-void do_dc_cal(void);
-void set_switching_frequency(float frequency);
-void set_dutycycle_hw(float dutycycle);
 void set_direction_hw(void);
+void set_dutycycle_hw(float dutycycle);
 void full_brake_hw(void);
+bool update_h_bridge(void);
 
 #endif

@@ -164,5 +164,5 @@ void run_control_loop(void)
         }
     }
 
-    mcpwm_dc_set_duty_direct_ll(dutycycle_now);
+    mcpwm_dc_set_duty_ll(dutycycle_now);
 }

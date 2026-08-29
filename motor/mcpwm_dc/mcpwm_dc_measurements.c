@@ -35,6 +35,21 @@ static volatile int curr2_sum;
 static volatile int curr2_offset;
 #endif
 
+/**
+ * Initialize the variables defined in this file
+ */
+void mcpwm_dc_init_measurements(void){
+    curr_adc_source_mask = 0;
+    curr_start_samples = 0;
+    curr0_sum = 0;
+    curr1_sum = 0;
+    curr0_offset = 0;
+    curr1_offset = 0;
+    curr2_sum = 0;
+    curr2_offset = 0;
+}
+
+
 // Calculate the dc levels in the current measurement when the motor is off
 // To compensate for this when running
 void do_dc_cal(void)
