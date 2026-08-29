@@ -38,7 +38,8 @@ extern volatile mc_configuration *conf;
 
 void mcpwm_dc_init_locals(void);
 
-void mcpwm_dc_set_duty_cleaned(float duty_cycle);
+void mcpwm_dc_set_duty_internal_hl(float dutycycle);
+void mcpwm_dc_set_duty_direct_ll(float dutycycle);
 void read_currents_raw(float *curr0, float *curr1, float *curr2);
 void process_current_measurements(float curr0, float curr1, float curr2);
 void take_motor_voltage_measurement(bool h_bridge_updated);

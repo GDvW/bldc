@@ -374,7 +374,7 @@ void stop_pwm_hw(void)
 /**
  * Sets the direction of the motor by enabling or disabling pins
  */
-static void set_direction_hw(void)
+void set_direction_hw(void)
 {
     if (direction == DIRECTION_FORWARD)
     {
@@ -412,6 +412,27 @@ static void set_direction_hw(void)
     update_adc_sample_pos(&timer_tmp);
     set_next_timer_settings(&timer_tmp);
 }
+
+/**
+ * Directly set the duty cycle on the hardware
+ */
+void set_dutycycle_hw(float dutycycle)
+{
+    mc_timer_struct timer_tmp;
+
+    utils_sys_lock_cnt();
+    timer_tmp = timer_struct;
+    utils_sys_unlock_cnt();
+
+    utils_truncate_number(&dutycycle, conf->l_min_duty, conf->l_max_duty);
+
+    switching_frequency_now = conf->m_dc_f_sw;
+    timer_tmp.top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
+    timer_tmp.duty_motor = (uint16_t)((float)timer_tmp.top * dutycycle);
+
+    set_next_timer_settings(&timer_tmp);
+}
+
 
 void mcpwm_dc_adc_inj_int_handler(void)
 {

@@ -70,10 +70,3 @@ void mcpwm_dc_set_configuration(volatile mc_configuration *configuration) {
 	utils_sys_unlock_cnt();
 }
 
-void mcpwm_dc_set_duty_cleaned(float duty_cycle)
-{
-    utils_truncate_number(&duty_cycle, -conf->l_max_duty, conf->l_max_duty);
-
-    dutycycle_set = duty_cycle;
-}
-

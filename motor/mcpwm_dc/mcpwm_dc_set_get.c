@@ -36,17 +36,17 @@ void mcpwm_dc_set_current(float current)
 }
 
 // FIXME
-void mcpwm_dc_set_duty(float duty_cycle)
+void mcpwm_dc_set_duty(float dutycycle)
 {
     control_mode = CONTROL_MODE_DUTY;
-    mcpwm_dc_set_duty_cleaned(duty_cycle);
+    mcpwm_dc_set_duty_internal_hl(dutycycle);
 }
 
 // FIXME
-void mcpwm_dc_set_duty_noramp(float duty_cycle)
+void mcpwm_dc_set_duty_noramp(float dutycycle)
 {
     control_mode = CONTROL_MODE_DUTY;
-    mcpwm_dc_set_duty_cleaned(duty_cycle);
+    mcpwm_dc_set_duty_internal_hl(dutycycle);
 }
 
 void mcpwm_dc_set_pid_speed(float rpm)

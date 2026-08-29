@@ -14,8 +14,8 @@ void mcpwm_dc_adc_inj_int_handler(void);
 
 void mcpwm_dc_set_parking_brake_current(bool output_enabled);
 void mcpwm_dc_set_current(float current);
-void mcpwm_dc_set_duty(float duty_cycle);
-void mcpwm_dc_set_duty_noramp(float duty_cycle);
+void mcpwm_dc_set_duty(float dutycycle);
+void mcpwm_dc_set_duty_noramp(float dutycycle);
 void mcpwm_dc_set_pid_speed(float rpm);
 
 float mcpwm_dc_get_duty_cycle_set(void);

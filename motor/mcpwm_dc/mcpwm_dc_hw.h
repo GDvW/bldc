@@ -44,5 +44,7 @@ void stop_pwm_hw(void);
 void update_adc_sample_pos(mc_timer_struct *t);
 void do_dc_cal(void);
 void set_switching_frequency(float frequency);
+void set_dutycycle_hw(float dutycycle);
+void set_direction_hw(void);
 
 #endif
