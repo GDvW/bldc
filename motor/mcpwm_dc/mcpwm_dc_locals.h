@@ -44,6 +44,9 @@ void read_currents_raw(float *curr0, float *curr1, float *curr2);
 void process_current_measurements(float curr0, float curr1, float curr2);
 void take_motor_voltage_measurement(bool h_bridge_updated);
 void run_control_loop(void);
+void stop_pwm_ll(void);
+void full_brake_ll(void);
+void stop_pwm_motor_ll(void);
 
 // Filters
 // Current FIR filter

@@ -370,6 +370,23 @@ void stop_pwm_hw(void)
 
     set_switching_frequency(conf->m_bldc_f_sw_max);
 }
+// Stop all pwm on the motor
+void stop_pwm_motor_hw(void)
+{
+#ifdef HW_HAS_DRV8313
+    DISABLE_BR();
+#endif
+
+    TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_ForcedAction_InActive);
+    TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
+    TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Disable);
+
+    TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_ForcedAction_InActive);
+    TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
+    TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Disable);
+
+    TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
+}
 
 /**
  * Sets the direction of the motor by enabling or disabling pins
@@ -411,6 +428,25 @@ void set_direction_hw(void)
 
     update_adc_sample_pos(&timer_tmp);
     set_next_timer_settings(&timer_tmp);
+}
+
+void full_brake_hw(void)
+{
+#ifdef HW_HAS_DRV8313
+    ENABLE_BR();
+#endif
+
+    TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_ForcedAction_InActive);
+    TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
+    TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
+
+    TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_ForcedAction_InActive);
+    TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
+    TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Enable);
+
+    TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
+
+    set_switching_frequency(conf->m_dc_f_sw);
 }
 
 /**

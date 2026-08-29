@@ -21,32 +21,52 @@
 #include "mcpwm_dc.h"
 #include "mcpwm_dc_locals.h"
 
-// TODO: Add checks for valid value of setpoint
-
 void mcpwm_dc_set_parking_brake_current(bool output_enabled)
 {
     parking_brake_output_set = output_enabled;
 }
 
-// FIXME
 void mcpwm_dc_set_current(float current)
 {
+    if (fabsf(current) < conf->cc_min_current)
+    {
+        control_mode = CONTROL_MODE_NONE;
+        stop_pwm_motor_ll();
+        return;
+    }
+
+    utils_truncate_number(&current, -conf->l_current_max * conf->l_current_max_scale,
+                          conf->l_current_max * conf->l_current_max_scale);
+
     control_mode = CONTROL_MODE_CURRENT;
     current_set = current;
+
+    if (state != MC_STATE_RUNNING)
+    {
+        mcpwm_dc_set_duty_internal_hl(SIGN(current) * conf->l_min_duty);
+    }
 }
 
-// FIXME
 void mcpwm_dc_set_duty(float dutycycle)
 {
     control_mode = CONTROL_MODE_DUTY;
     mcpwm_dc_set_duty_internal_hl(dutycycle);
 }
 
-// FIXME
 void mcpwm_dc_set_duty_noramp(float dutycycle)
 {
     control_mode = CONTROL_MODE_DUTY;
-    mcpwm_dc_set_duty_internal_hl(dutycycle);
+
+    if (state != MC_STATE_RUNNING)
+    {
+        mcpwm_dc_set_duty_internal_hl(dutycycle);
+    }
+    else
+    {
+        dutycycle_set = dutycycle;
+        dutycycle_now = dutycycle;
+        mcpwm_dc_set_duty_direct_ll(dutycycle);
+    }
 }
 
 void mcpwm_dc_set_pid_speed(float rpm)
@@ -126,5 +146,5 @@ bool mcpwm_dc_init_done(void)
 void mcpwm_dc_stop_pwm(void)
 {
     control_mode = CONTROL_MODE_NONE;
-    // TODO: Actually stop the motor
+    stop_pwm_motor_ll();
 }

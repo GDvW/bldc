@@ -61,9 +61,7 @@ void mcpwm_dc_deinit(void)
 void mcpwm_dc_set_configuration(volatile mc_configuration *configuration) {
 	// Stop everything first to be safe
 	control_mode = CONTROL_MODE_NONE;
-	//stop_pwm_ll();
-    // TODO: should be ll, think about integrating that
-    stop_pwm_hw();
+    stop_pwm_ll();
 
 	utils_sys_lock_cnt();
 	conf = configuration;

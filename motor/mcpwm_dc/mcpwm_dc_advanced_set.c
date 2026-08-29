@@ -74,6 +74,23 @@ void mcpwm_dc_set_duty_direct_ll(float dutycycle)
     set_direction_hw();
 }
 
+void stop_pwm_ll(void)
+{
+    state = MC_STATE_OFF;
+    stop_pwm_hw();
+}
+void stop_pwm_motor_ll(void)
+{
+    state = MC_STATE_OFF;
+    stop_pwm_hw();
+}
+
+void full_brake_ll(void)
+{
+    state = MC_STATE_FULL_BRAKE;
+    full_brake_hw();
+}
+
 static void start_control_loop(float dutycycle)
 {
     // Check if dutycycle set will make motor run (case 1) or stop (case 2)
