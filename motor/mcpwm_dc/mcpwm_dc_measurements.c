@@ -2,7 +2,7 @@
  * Contains all stuff related to taking current/voltage measurements etc
  */
 
- #include "ch.h"
+#include "ch.h"
 #include "hal.h"
 #include "stm32f4xx_conf.h"
 #include <stdlib.h>
@@ -25,7 +25,7 @@
 #include "mcpwm_dc_hw.h"
 
 static volatile int curr_adc_source_mask;
-static volatile int curr_start_samples; 
+static volatile int curr_start_samples;
 static volatile int curr0_sum;
 static volatile int curr1_sum;
 static volatile int curr0_offset;
@@ -162,10 +162,11 @@ void read_currents_raw(float *curr0, float *curr1, float *curr2)
 }
 
 /**
- * Does everything for the current measurement processing 
+ * Does everything for the current measurement processing
  * (storing for the dc_cal, correcting for the dc level, etc)
  */
-void process_current_measurements(float curr0, float curr1, float curr2){
+void process_current_measurements(float curr0, float curr1, float curr2)
+{
     // Store results for the dc_cal
     curr_start_samples++;
     curr0_sum += curr0;
@@ -204,7 +205,7 @@ void process_current_measurements(float curr0, float curr1, float curr2){
 
     // Calculate the total motor current and filter it
     float curr_tot_sample = 0;
-    if (direction)
+    if (direction == DIRECTION_FORWARD)
     {
 #ifdef HW_HAS_3_SHUNTS
         curr_tot_sample = -(GET_CURRENT3() - curr2_offset) * FAC_CURRENT3;
@@ -230,4 +231,16 @@ void process_current_measurements(float curr0, float curr1, float curr2){
     last_current_sample_filtered = filter_run_fir_iteration(
         (float *)current_fir_samples, (float *)current_fir_coeffs,
         CURR_FIR_TAPS_BITS, current_fir_index);
+}
+
+void take_motor_voltage_measurement(bool h_bridge_updated)
+{
+    // After H-bridge configuration, use the BEMF differential.
+    // Otherwise estimate motor voltage from duty cycle and input voltage.
+    float motor_voltage_est = h_bridge_updated
+                                  ? ADC_V_L3 - ADC_V_L1
+                                  : dutycycle_now * (float)ADC_Value[ADC_IND_VIN_SENS];
+
+    filter_add_sample((float *)amp_fir_samples, motor_voltage_est,
+                      AMP_FIR_TAPS_BITS, (uint32_t *)&amp_fir_index);
 }

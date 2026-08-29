@@ -28,19 +28,21 @@ void mcpwm_dc_set_parking_brake_current(bool output_enabled)
     parking_brake_output_set = output_enabled;
 }
 
+// FIXME
 void mcpwm_dc_set_current(float current)
 {
     control_mode = CONTROL_MODE_CURRENT;
     current_set = current;
 }
 
+// FIXME
 void mcpwm_dc_set_duty(float duty_cycle)
 {
     control_mode = CONTROL_MODE_DUTY;
     mcpwm_dc_set_duty_cleaned(duty_cycle);
 }
 
-// TODO: Temporarily the same, but will change it
+// FIXME
 void mcpwm_dc_set_duty_noramp(float duty_cycle)
 {
     control_mode = CONTROL_MODE_DUTY;

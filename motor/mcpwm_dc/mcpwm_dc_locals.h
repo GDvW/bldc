@@ -41,6 +41,8 @@ void mcpwm_dc_init_locals(void);
 void mcpwm_dc_set_duty_cleaned(float duty_cycle);
 void read_currents_raw(float *curr0, float *curr1, float *curr2);
 void process_current_measurements(float curr0, float curr1, float curr2);
+void take_motor_voltage_measurement(bool h_bridge_updated);
+void run_control_loop(void);
 
 // Filters
 // Current FIR filter

@@ -31,6 +31,7 @@ float mcpwm_dc_get_tot_current_filtered(void);
 float mcpwm_dc_get_tot_current_in(void);
 float mcpwm_dc_get_tot_current_in_filtered(void);
 
+// FIXME
 void mcpwm_dc_release_motor(void);
 void mcpwm_dc_stop_pwm(void);
 bool mcpwm_dc_is_dccal_done(void);

@@ -20,7 +20,7 @@
 #include "mcpwm_dc_locals.h"
 #include "mcpwm_dc_hw.h"
 
-
+static bool update_h_bridge(void);
 
 void mcpwm_dc_init_hw()
 {
@@ -371,6 +371,48 @@ void stop_pwm_hw(void)
     set_switching_frequency(conf->m_bldc_f_sw_max);
 }
 
+/**
+ * Sets the direction of the motor by enabling or disabling pins
+ */
+static void set_direction_hw(void)
+{
+    if (direction == DIRECTION_FORWARD)
+    {
+        // +
+        TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_OCMode_PWM1);
+        TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
+        TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
+
+        // -
+        TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_OCMode_Inactive);
+        TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
+        TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Enable);
+    }
+    else
+    {
+        // +
+        TIM_SelectOCxM(TIM1, TIM_Channel_3, TIM_OCMode_PWM1);
+        TIM_CCxCmd(TIM1, TIM_Channel_3, TIM_CCx_Enable);
+        TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Enable);
+
+        // -
+        TIM_SelectOCxM(TIM1, TIM_Channel_1, TIM_OCMode_Inactive);
+        TIM_CCxCmd(TIM1, TIM_Channel_1, TIM_CCx_Enable);
+        TIM_CCxNCmd(TIM1, TIM_Channel_1, TIM_CCxN_Enable);
+    }
+
+    TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
+
+    mc_timer_struct timer_tmp;
+
+    utils_sys_lock_cnt();
+    timer_tmp = timer_struct;
+    utils_sys_unlock_cnt();
+
+    update_adc_sample_pos(&timer_tmp);
+    set_next_timer_settings(&timer_tmp);
+}
+
 void mcpwm_dc_adc_inj_int_handler(void)
 {
     // Start timer for time keeping
@@ -382,4 +424,70 @@ void mcpwm_dc_adc_inj_int_handler(void)
     process_current_measurements(curr0, curr1, curr2);
 
     last_adc_inj_isr_duration = timer_seconds_elapsed_since(t_start);
+}
+
+/*
+ * New ADC samples ready in DMA. Do commutation!
+ */
+void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
+{
+    // Suppress unused parameter warnings
+    (void)p;
+    (void)flags;
+
+    // Time the execution time of the function
+    uint32_t t_start = timer_time_now();
+
+    // Update the timer settings (pwm and adc timing) if possible and needed
+    update_timer_attempt();
+
+    // Reset the watchdog
+    timeout_feed_WDT(THREAD_MCPWM);
+    
+    // Update the h bridge to match the currently defined direction
+    // This will only be done if the current state is running
+    const bool h_bridge_updated = update_h_bridge();
+    
+    take_motor_voltage_measurement(h_bridge_updated);
+
+    // Only create new duty cycles if the motor is running
+    // and the FETs are configured correctly.
+    // (If they have been configured this iteration, measurements are not correct, so wait till the next time)
+    if (state == MC_STATE_RUNNING && !h_bridge_updated)
+    {
+        run_control_loop();
+    }
+
+    float dt = 1.0 / switching_frequency_now;
+    mc_interface_mc_timer_isr(false, dt);
+
+    last_adc_isr_duration = timer_seconds_elapsed_since(t_start);
+}
+
+/**
+ * Updates the H-bridge configuration so that the polarity is correct
+ * Returns true if the H-bridge configuration was updated
+ */
+static bool update_h_bridge(void)
+{
+    static bool was_running = false;
+    static direction_t direction_before = DIRECTION_FORWARD;
+
+    const bool running = state == MC_STATE_RUNNING;
+    // Update needed in case we are running now and
+    // - direction has switched (H-bridge has to switch polarity)
+    // - We are just starting. Other functions have configured the H-bridge in an invalid way
+    const bool needs_update =
+        running &&
+        (!was_running || direction != direction_before);
+
+    if (needs_update)
+    {
+        set_direction_hw();
+    }
+
+    was_running = running;
+    direction_before = direction;
+
+    return needs_update;
 }
