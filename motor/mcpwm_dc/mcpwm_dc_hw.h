@@ -36,8 +36,6 @@ typedef struct
 #endif
 } mc_timer_struct;
 
-extern volatile mc_timer_struct timer_struct;
-
 void mcpwm_dc_init_hw(void);
 void mcpwm_dc_deinit_hw(void);
 void set_next_timer_settings(mc_timer_struct *settings);

@@ -20,6 +20,8 @@
 #include "mcpwm_dc_locals.h"
 #include "mcpwm_dc_hw.h"
 
+static volatile mc_timer_struct timer_struct;
+
 void mcpwm_dc_init_hw()
 {
     // Initialize clocks
