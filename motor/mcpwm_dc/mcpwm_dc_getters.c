@@ -65,6 +65,11 @@ mc_state mcpwm_dc_get_state(void)
     return state;
 }
 
+mc_control_mode mcpwm_dc_get_control_mode(void)
+{
+    return control_mode;
+}
+
 float mcpwm_dc_get_switching_frequency_now(void)
 {
     return switching_frequency_now;

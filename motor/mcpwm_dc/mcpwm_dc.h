@@ -35,6 +35,7 @@ float mcpwm_dc_get_tot_current_directional_filtered(void);
 float mcpwm_dc_get_tot_current_in(void);
 float mcpwm_dc_get_tot_current_in_filtered(void);
 mc_state mcpwm_dc_get_state(void);
+mc_control_mode mcpwm_dc_get_control_mode(void);
 float mcpwm_dc_get_switching_frequency_now(void);
 bool mcpwm_dc_is_dccal_done(void);
 bool mcpwm_dc_init_done(void);
