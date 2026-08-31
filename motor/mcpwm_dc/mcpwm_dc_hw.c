@@ -264,6 +264,7 @@ void mcpwm_dc_init_hw()
     mc_timer_struct timer_tmp;
     timer_tmp.top = TIM1->ARR;
     timer_tmp.duty_motor = TIM1->ARR / 2;
+    timer_tmp.duty_brake = TIM1->ARR / 2;
     update_adc_sample_pos(&timer_tmp);
     set_next_timer_settings(&timer_tmp);
 
@@ -368,7 +369,7 @@ void stop_pwm_hw(void)
 
     TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
 
-    set_switching_frequency(conf->m_bldc_f_sw_max);
+    set_switching_frequency(conf->m_dc_f_sw);
 }
 // Stop all pwm on the motor
 void stop_pwm_motor_hw(void)
@@ -495,4 +496,8 @@ bool update_h_bridge(void)
     direction_before = direction;
 
     return needs_update;
+}
+
+mc_timer_struct mcpwm_dc_hw_get_timer_config(void){
+    return timer_struct;
 }

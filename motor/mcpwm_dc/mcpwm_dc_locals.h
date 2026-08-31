@@ -62,6 +62,9 @@ extern volatile bool dccal_done;
 extern volatile float last_adc_isr_duration;
 extern volatile float last_adc_inj_isr_duration;
 
+// DEBUG
+extern volatile bool was_h_bridge_configured;
+
 // Filters
 // Current FIR filter
 #define CURR_FIR_TAPS_BITS 4

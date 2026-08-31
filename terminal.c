@@ -105,7 +105,7 @@ __attribute__((section(".text2"))) void terminal_process_string(char *str) {
 		return;
 	}
 	if (strcmp(argv[0], "last_adc_duration") == 0) {
-		commands_printf("Latest ADC duration: %.4f ms", (double)(mcpwm_get_last_adc_isr_duration() * 1000.0));
+		commands_printf("Latest ADC duration: %.4f ms", (double)(mc_interface_get_last_adc_isr_duration() * 1000.0));
 		commands_printf("Latest injected ADC duration: %.4f ms", (double)(mc_interface_get_last_inj_adc_isr_duration() * 1000.0));
 		commands_printf("Latest sample ADC duration: %.4f ms\n", (double)(mc_interface_get_last_sample_adc_isr_duration() * 1000.0));
 	} else if (strcmp(argv[0], "kv") == 0) {

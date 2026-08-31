@@ -27,7 +27,7 @@ void mcpwm_dc_stop_pwm(void);
 // Getters
 float mcpwm_dc_get_duty_cycle_set(void);
 float mcpwm_dc_get_duty_cycle_now(void);
-//float mcpwm_dc_get_rpm(void);
+// float mcpwm_dc_get_rpm(void);
 float mcpwm_dc_get_tot_current(void);
 float mcpwm_dc_get_tot_current_filtered(void);
 float mcpwm_dc_get_tot_current_directional(void);
@@ -40,5 +40,19 @@ float mcpwm_dc_get_switching_frequency_now(void);
 bool mcpwm_dc_is_dccal_done(void);
 bool mcpwm_dc_init_done(void);
 float mcpwm_dc_get_last_adc_isr_duration(void);
+float mcpwm_dc_get_last_inj_adc_isr_duration(void);
+
+void mcpwm_dc_meas_get_info(
+    int *curr_adc_source_mask,
+    int *curr_start_samples,
+    int *curr0_sum,
+    int *curr1_sum,
+    int *curr2_sum,
+    int *curr0_offset,
+    int *curr1_offset,
+    int *curr2_offset);
+
+// Debug
+bool mcpwm_dc_was_h_bridge_configured(void);
 
 #endif

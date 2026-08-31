@@ -89,3 +89,12 @@ float mcpwm_dc_get_last_adc_isr_duration(void)
 {
     return last_adc_isr_duration;
 }
+
+float mcpwm_dc_get_last_inj_adc_isr_duration(void)
+{
+    return last_adc_inj_isr_duration;
+}
+
+bool mcpwm_dc_was_h_bridge_configured(void){
+    return was_h_bridge_configured;
+}

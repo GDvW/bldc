@@ -38,7 +38,8 @@ static volatile int curr2_offset;
 /**
  * Initialize the variables defined in this file
  */
-void mcpwm_dc_init_measurements(void){
+void mcpwm_dc_init_measurements(void)
+{
     curr_adc_source_mask = 0;
     curr_start_samples = 0;
     curr0_sum = 0;
@@ -48,7 +49,6 @@ void mcpwm_dc_init_measurements(void){
     curr2_sum = 0;
     curr2_offset = 0;
 }
-
 
 // Calculate the dc levels in the current measurement when the motor is off
 // To compensate for this when running
@@ -117,10 +117,20 @@ void update_adc_sample_pos(mc_timer_struct *t)
     // Only measure phase 1 and 3 at the same moment as the voltage.
     curr_adc_source_mask = (1u << 0) | (1u << 2);
 
+    uint32_t current_sample_point_brake;
+    if (duty_brake > 400)
+    {
+        current_sample_point_brake = duty_brake / 2;
+    }
+    else
+    {
+        current_sample_point_brake = duty_brake / 2 + 200;
+    }
+
     // Current sampling logic. Choosing a point where to sample the currents
     // TODO: Look whether midpoint is a good choice, also for low RPM's
-    const uint32_t current_sample_point_motor = duty_motor / 2;
-    const uint32_t current_sample_point_brake = duty_brake / 2;
+    // The motor currents are sampled at the same time as the voltage, so these setpoints are not used anyway.
+    const uint32_t current_sample_point_motor = top - 10;
     t->curr1_sample = current_sample_point_motor;
     t->curr2_sample = current_sample_point_brake;
 #ifdef HW_HAS_3_SHUNTS
@@ -258,4 +268,24 @@ void take_motor_voltage_measurement(bool h_bridge_updated)
 
     filter_add_sample((float *)amp_fir_samples, motor_voltage_est,
                       AMP_FIR_TAPS_BITS, (uint32_t *)&amp_fir_index);
+}
+
+void mcpwm_dc_meas_get_info(
+    int *casm,
+    int *css,
+    int *c0s,
+    int *c1s,
+    int *c2s,
+    int *c0o,
+    int *c1o,
+    int *c20)
+{
+    *casm = curr_adc_source_mask;
+    *css = curr_start_samples;
+    *c0s = curr0_sum;
+    *c1s = curr1_sum;
+    *c2s = curr2_sum;
+    *c0o = curr0_offset;
+    *c1o = curr1_offset;
+    *c20 = curr2_offset;
 }

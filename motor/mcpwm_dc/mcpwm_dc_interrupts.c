@@ -58,7 +58,7 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
     // Update the h bridge to match the currently defined direction
     // This will only be done if the current state is running
     const bool h_bridge_updated = update_h_bridge();
-
+    was_h_bridge_configured = h_bridge_updated;
     take_motor_voltage_measurement(h_bridge_updated);
 
     // Only create new duty cycles if the motor is running

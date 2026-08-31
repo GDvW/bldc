@@ -39,8 +39,13 @@ void mcpwm_dc_init_locals()
     direction = DIRECTION_FORWARD;
     switching_frequency_now = conf->m_dc_f_sw;
 
+    was_h_bridge_configured = false;
+
     last_current_sample = 0.0;
     last_current_sample_filtered = 0.0;
+
+    last_adc_inj_isr_duration = -1.0;
+    last_adc_isr_duration = -1.0;
 
     init_done = false;
     dccal_done = false;
@@ -81,6 +86,8 @@ volatile bool init_done;
 volatile bool dccal_done;
 volatile float last_adc_isr_duration;
 volatile float last_adc_inj_isr_duration;
+
+volatile bool was_h_bridge_configured;
 
 // Filters
 // Current FIR filter

@@ -1661,11 +1661,36 @@ float mc_interface_get_last_inj_adc_isr_duration(void)
 	switch (motor_now()->m_conf.motor_type)
 	{
 	case MOTOR_TYPE_DC:
-		ret = mcpwm_dc_get_last_adc_isr_duration();
+		ret = mcpwm_dc_get_last_inj_adc_isr_duration();
 		break;
 
 	case MOTOR_TYPE_BLDC:
 		ret = mcpwm_get_last_inj_adc_isr_duration();
+		break;
+
+	case MOTOR_TYPE_FOC:
+		ret = -1.0;
+		break;
+
+	default:
+		break;
+	}
+
+	return ret;
+}
+
+float mc_interface_get_last_adc_isr_duration(void)
+{
+	float ret = 0.0;
+
+	switch (motor_now()->m_conf.motor_type)
+	{
+	case MOTOR_TYPE_DC:
+		ret = mcpwm_dc_get_last_adc_isr_duration();
+		break;
+
+	case MOTOR_TYPE_BLDC:
+		ret = mcpwm_get_last_adc_isr_duration();
 		break;
 
 	case MOTOR_TYPE_FOC:

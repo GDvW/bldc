@@ -47,5 +47,6 @@ void set_direction_hw(void);
 void set_dutycycle_hw(float dutycycle);
 void full_brake_hw(void);
 bool update_h_bridge(void);
+mc_timer_struct mcpwm_dc_hw_get_timer_config(void);
 
 #endif
