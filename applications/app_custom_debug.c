@@ -16,8 +16,10 @@
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-    Custom app to debug the internal state of the parking brake
+    Custom app to debug the internal state of the brushed dc motor module
     */
+
+#ifdef DEBUG_MCPWM_DC
 
 #include "app.h"
 #include "ch.h"
@@ -42,39 +44,6 @@
 
 // Private functions
 static void terminal_debug(int argc, const char **argv);
-
-/**
- * Called when the application is started
- * Set a callback
- */
-void app_custom_start(void)
-{
-    // Terminal commands for the VESC Tool terminal can be registered.
-    terminal_register_command_callback(
-        "debug",
-        "Print debug info about mcpwm module",
-        NULL,
-        terminal_debug);
-}
-
-/**
- * Called when the application is stopped
- * Release callback.
- */
-void app_custom_stop(void)
-{
-    terminal_unregister_callback(terminal_debug);
-}
-
-/**
- * Set the app configuration.
- *
- * @param conf the app configuration
- */
-void app_custom_configure(app_configuration *conf)
-{
-    (void)conf;
-}
 
 /**
  * Callback function for the terminal. Used to debug the internal state of the parking brake
@@ -138,4 +107,32 @@ static void terminal_debug(int argc, const char **argv)
     commands_printf("    curr0_offset: %d", curr0_offset);
     commands_printf("    curr1_offset: %d", curr1_offset);
     commands_printf("    curr2_offset: %d", curr2_offset);
+}
+#endif
+
+/**
+ * Called when the application is started
+ * Set a callback
+ */
+void app_custom_debug_start(void)
+{
+#ifdef DEBUG_MCPWM_DC
+    // Terminal commands for the VESC Tool terminal can be registered.
+    terminal_register_command_callback(
+        "debug",
+        "Print debug info about mcpwm module",
+        NULL,
+        terminal_debug);
+#endif
+}
+
+/**
+ * Called when the application is stopped
+ * Release callback.
+ */
+void app_custom_debug_stop(void)
+{
+#ifdef DEBUG_MCPWM_DC
+    terminal_unregister_callback(terminal_debug);
+#endif
 }
