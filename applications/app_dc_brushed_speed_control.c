@@ -1,5 +1,20 @@
 /**
  * Custom app to control speed on a brushed dc motor
+ *
+ * Needs:
+ * - Check if the current motor type is brushed dc for safety -> via mc_interface
+ * - voltage and current measurements -> via callback to allow custom filtering.
+ * - RPM setpoint -> normal get
+ * - Current dutycycle setpoint/current setpoint -> normal api
+ * - If current control method is speed based -> via modified get_control_mode function
+ *
+ * Sets:
+ * - Measured RPM
+ * - Duty cycle or current
+ *
+ * I will add another file to the driver because setting current/duty from outside while not switching off speed control is important
+ *
+ * REMARK: nicest is to have rpm keeping updated even though no speed control is selected
  */
 #include "app.h"
 #include "ch.h"
@@ -19,7 +34,6 @@
 #include <math.h>
 #include <string.h>
 #include <stdio.h>
-
 
 /**
  * Called when the application is started

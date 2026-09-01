@@ -30,6 +30,8 @@ void mcpwm_dc_init_locals()
     control_mode = CONTROL_MODE_NONE;
     state = MC_STATE_OFF;
 
+    speed_control_active = false;
+
     dutycycle_set = 0.0;
     current_set = 0.0;
     rpm_set = 0.0;
@@ -37,6 +39,7 @@ void mcpwm_dc_init_locals()
 
     dutycycle_now = 0.0;
     direction = DIRECTION_FORWARD;
+    rpm_now = 0.0;
     switching_frequency_now = conf->m_dc_f_sw;
 
     was_h_bridge_configured = false;
@@ -66,6 +69,10 @@ volatile mc_control_mode control_mode;
 // State of device: running, full_brake or none
 volatile mc_state state;
 
+// For the speed control app
+// Whether speed control is being used or if it should be deactivated
+volatile bool speed_control_active;
+
 // Setpoints
 volatile float dutycycle_set;
 volatile float current_set;
@@ -75,6 +82,7 @@ volatile bool parking_brake_output_set;
 // Real values
 volatile float dutycycle_now;
 volatile direction_t direction;
+volatile float rpm_now;
 volatile float switching_frequency_now;
 
 // Current measurements

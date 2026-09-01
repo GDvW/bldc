@@ -28,12 +28,14 @@ void mcpwm_dc_set_parking_brake(bool output_enabled)
 
 void mcpwm_dc_set_duty(float dutycycle)
 {
+    speed_control_active = false;
     control_mode = CONTROL_MODE_DUTY;
     mcpwm_dc_set_duty_hl(dutycycle);
 }
 
 void mcpwm_dc_set_duty_noramp(float dutycycle)
 {
+    speed_control_active = false;
     control_mode = CONTROL_MODE_DUTY;
 
     if (state != MC_STATE_RUNNING)
@@ -50,34 +52,22 @@ void mcpwm_dc_set_duty_noramp(float dutycycle)
 
 void mcpwm_dc_set_current(float current)
 {
-    if (fabsf(current) < conf->cc_min_current)
-    {
-        control_mode = CONTROL_MODE_NONE;
-        stop_pwm_motor_ll();
-        return;
-    }
-
-    utils_truncate_number(&current, -conf->l_current_max * conf->l_current_max_scale,
-                          conf->l_current_max * conf->l_current_max_scale);
-
-    control_mode = CONTROL_MODE_CURRENT;
-    current_set = current;
-
-    if (state != MC_STATE_RUNNING)
-    {
-        mcpwm_dc_set_duty_hl(SIGN(current) * conf->l_min_duty);
-    }
+    speed_control_active = false;
+    mcpwm_dc_set_current_hl(current);
 }
 
 void mcpwm_dc_set_pid_speed(float rpm)
 {
+    // Control mode will be set to another mode in a few moments, but that does not matter
     control_mode = CONTROL_MODE_SPEED;
+    speed_control_active = true;
     rpm_set = rpm;
 }
 
 void mcpwm_dc_release_motor(void)
 {
     current_set = 0.0;
+    speed_control_active = false;
     control_mode = CONTROL_MODE_NONE;
     stop_pwm_motor_ll();
 }
@@ -87,6 +77,7 @@ void mcpwm_dc_release_motor(void)
  */
 void mcpwm_dc_stop_pwm(void)
 {
+    speed_control_active = false;
     control_mode = CONTROL_MODE_NONE;
     stop_pwm_ll();
 }

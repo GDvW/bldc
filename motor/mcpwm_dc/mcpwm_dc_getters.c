@@ -30,6 +30,11 @@ float mcpwm_dc_get_duty_cycle_now(void)
     return dutycycle_now;
 }
 
+float mcpwm_dc_get_rpm(void)
+{
+    return rpm_now;
+}
+
 float mcpwm_dc_get_tot_current(void)
 {
     return last_current_sample;
@@ -67,6 +72,19 @@ mc_state mcpwm_dc_get_state(void)
 
 mc_control_mode mcpwm_dc_get_control_mode(void)
 {
+    if (speed_control_active)
+    {
+        return CONTROL_MODE_SPEED;
+    }
+    return control_mode;
+}
+
+mc_control_mode mcpwm_dc_get_control_mode_base(void)
+{
+    if (speed_control_active)
+    {
+        return CONTROL_MODE_SPEED;
+    }
     return control_mode;
 }
 
@@ -95,6 +113,7 @@ float mcpwm_dc_get_last_inj_adc_isr_duration(void)
     return last_adc_inj_isr_duration;
 }
 
-bool mcpwm_dc_was_h_bridge_configured(void){
+bool mcpwm_dc_was_h_bridge_configured(void)
+{
     return was_h_bridge_configured;
 }

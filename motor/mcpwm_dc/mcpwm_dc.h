@@ -1,6 +1,9 @@
 #ifndef MCPWM_DC
 #define MCPWM_DC
 
+// TODO: more consistency in naming. for example, mcpmw_dc only for public API
+// TODO: add documentation
+
 #include "conf_general.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -27,7 +30,7 @@ void mcpwm_dc_stop_pwm(void);
 // Getters
 float mcpwm_dc_get_duty_cycle_set(void);
 float mcpwm_dc_get_duty_cycle_now(void);
-// float mcpwm_dc_get_rpm(void);
+float mcpwm_dc_get_rpm(void);
 float mcpwm_dc_get_tot_current(void);
 float mcpwm_dc_get_tot_current_filtered(void);
 float mcpwm_dc_get_tot_current_directional(void);
@@ -36,6 +39,9 @@ float mcpwm_dc_get_tot_current_in(void);
 float mcpwm_dc_get_tot_current_in_filtered(void);
 mc_state mcpwm_dc_get_state(void);
 mc_control_mode mcpwm_dc_get_control_mode(void);
+// Get which speed control is really being used.
+// If the normal control mode is speed, at the base, it is duty or current. This method retrieves that.
+mc_control_mode mcpwm_dc_get_control_mode_base(void);
 float mcpwm_dc_get_switching_frequency_now(void);
 bool mcpwm_dc_is_dccal_done(void);
 bool mcpwm_dc_init_done(void);

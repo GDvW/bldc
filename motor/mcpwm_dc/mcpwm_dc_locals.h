@@ -21,6 +21,7 @@ void take_motor_voltage_measurement(bool h_bridge_updated);
 // Actuation (bridge between public API and control loop)
 void mcpwm_dc_set_duty_hl(float dutycycle);
 void mcpwm_dc_set_duty_ll(float dutycycle);
+void mcpwm_dc_set_current_hl(float current);
 void stop_pwm_ll(void);
 void stop_pwm_motor_ll(void);
 void full_brake_ll(void);
@@ -41,6 +42,10 @@ extern volatile mc_control_mode control_mode;
 // State of device: running, full_brake or none
 extern volatile mc_state state;
 
+// For the speed control app
+// Whether speed control is being used or if it should be deactivated
+extern volatile bool speed_control_active;
+
 // Setpoints
 extern volatile float dutycycle_set;
 extern volatile float current_set;
@@ -50,6 +55,7 @@ extern volatile bool parking_brake_output_set;
 // Real values
 extern volatile float dutycycle_now;
 extern volatile direction_t direction;
+extern volatile float rpm_now;
 extern volatile float switching_frequency_now;
 
 // Current measurements
