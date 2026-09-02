@@ -71,6 +71,10 @@ extern volatile float last_adc_inj_isr_duration;
 // DEBUG
 extern volatile bool was_h_bridge_configured;
 
+// Callbacks
+// Stores the measurement done callback. Meant for the app_interface
+static void (*after_measurement_taken)(void) = 0;
+
 // Filters
 // Current FIR filter
 #define CURR_FIR_TAPS_BITS 4

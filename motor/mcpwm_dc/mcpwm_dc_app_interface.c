@@ -18,6 +18,11 @@
 #include "mcpwm_dc_locals.h"
 #include "mcpwm_dc_app_interface.h"
 
+void mcpwm_dc_app_set_measurement_callback(callback_t cb)
+{
+    after_measurement_taken = cb;
+}
+
 bool mcpwm_dc_app_is_speed_control_active(void)
 {
     return speed_control_active;

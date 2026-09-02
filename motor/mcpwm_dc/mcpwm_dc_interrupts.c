@@ -34,6 +34,11 @@ void mcpwm_dc_adc_inj_int_handler(void)
     read_currents_raw(&curr0, &curr1, &curr2);
     process_current_measurements(curr0, curr1, curr2);
 
+    if (after_measurement_taken)
+    {
+        after_measurement_taken();
+    }
+
     last_adc_inj_isr_duration = timer_seconds_elapsed_since(t_start);
 }
 
