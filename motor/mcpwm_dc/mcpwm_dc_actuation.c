@@ -73,7 +73,7 @@ void mcpwm_dc_set_duty_ll(float dutycycle)
     // Apply
     set_dutycycle_hw(dutycycle_abs);
     state = MC_STATE_RUNNING;
-    set_direction_hw();
+    update_h_bridge();
 }
 
 void mcpwm_dc_set_current_hl(float current)
