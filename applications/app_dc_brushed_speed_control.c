@@ -36,7 +36,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MOTOR_RESISTANCE 73 //Ohms
+#define MOTOR_RESISTANCE 73 // Ohms
 #define MOTOR_CONSTANT 0.01 // V/RPM
 
 // Threads
@@ -49,6 +49,7 @@ static volatile bool is_running = false;
 
 // For current filtering
 static volatile float current_filtered;
+static volatile float rpm_now;
 
 // Private functions
 static void after_measurement_taken(void);
@@ -110,9 +111,11 @@ static THD_FUNCTION(rpm_thread, arg)
             return;
         }
 
+        run_pid_control_speed(0.0005);
+
         timeout_reset(); // Reset timeout if everything is OK.
 
-        chThdSleepMilliseconds(10); // Run at approximately
+        chThdSleepMicroseconds(500); // Run at approximately 2kHz
     }
 }
 
@@ -122,9 +125,94 @@ static void after_measurement_taken(void)
     UTILS_LP_FAST(current_filtered, mc_interface_get_tot_current_directional(), 0.061); // 1st order IIR filter with fc = 100 Hz
 
     // Get the input voltage
-    const float motor_voltage = mc_interface_get_duty_cycle_now() * GET_INPUT_VOLTAGE();
+    const float motor_voltage = mc_interface_get_duty_cycle_now() * mc_interface_get_input_voltage_filtered();
 
-    const float bemf = motor_voltage - current_filtered * MOTOR_RESISTANCE;
-    const float rpm = bemf / MOTOR_CONSTANT;
-    mcpwm_dc_app_set_current_rpm(rpm);
+    float bemf = motor_voltage - fabsf(current_filtered) * MOTOR_RESISTANCE;
+    if (bemf < 0.0){
+        bemf = 0.0;
+    }
+
+    rpm_now = SIGN(current_filtered) * bemf / MOTOR_CONSTANT;
+    mcpwm_dc_app_set_rpm_now(rpm_now);
+}
+
+static void run_pid_control_speed(float dt)
+{
+    static float i_term = 0;
+    static float prev_error = 0;
+    float p_term;
+    float d_term;
+
+    // Check if DC brushed motor is configured, because this app is only meant for that type motor
+    const volatile mc_configuration *conf = mc_interface_get_configuration();
+
+    if (conf->motor_type != MOTOR_TYPE_DC)
+    {
+        return;
+    }
+
+    const float duty_now = mc_interface_get_duty_cycle_now();
+    const float rpm_set = mcpwm_dc_app_get_rpm_set();
+
+    // PID is off. Return.
+    if (!mcpwm_dc_app_is_speed_control_active())
+    {
+        i_term = duty_now;
+
+        prev_error = 0.0;
+        return;
+    }
+
+    float error = rpm_set - rpm_now;
+
+    // Too low RPM set. Stop and return.
+    if (fabsf(rpm_set) < conf->s_pid_min_erpm)
+    {
+        i_term = duty_now;
+        prev_error = error;
+        mcpwm_dc_app_set_duty(0.0);
+        return;
+    }
+
+    // Compensation for supply voltage variations
+    float scale = 1.0 / mc_interface_get_input_voltage_filtered();
+
+    // Compute parameters
+    p_term = error * conf->s_pid_kp * scale;
+    i_term += error * conf->s_pid_ki * dt * scale;
+    d_term = (error - prev_error) * (conf->s_pid_kd / dt) * scale;
+
+    // Filter D
+    static float d_filter = 0.0;
+    UTILS_LP_FAST(d_filter, d_term, conf->s_pid_kd_filter);
+    d_term = d_filter;
+
+    // I-term wind-up protection
+    utils_truncate_number(&i_term, -1.0, 1.0);
+
+    // Store previous error
+    prev_error = error;
+
+    // Calculate output
+    float duty_new = p_term + i_term + d_term;
+
+    // Make sure that at least minimum output is used
+    if (fabsf(duty_new) < conf->l_min_duty)
+    {
+        duty_new = SIGN(duty_new) * conf->l_min_duty;
+    }
+
+    // Do not output in reverse direction to oppose too high rpm
+    if (rpm_set > 0.0 && duty_new < 0.0)
+    {
+        duty_new = conf->l_min_duty;
+        i_term = 0.0;
+    }
+    else if (rpm_set < 0.0 && duty_new > 0.0)
+    {
+        duty_new = -conf->l_min_duty;
+        i_term = 0.0;
+    }
+
+    mcpwm_dc_app_set_duty(duty_new);
 }

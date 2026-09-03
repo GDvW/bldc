@@ -13,6 +13,7 @@ CSRC += \
 	motor/mcpwm_dc/mcpwm_dc_locals.c \
 	motor/mcpwm_dc/mcpwm_dc_measurements.c \
 	motor/mcpwm_dc/mcpwm_dc_setters.c \
+	motor/mcpwm_dc/mcpwm_dc_app_interface.c \
 
 INCDIR += motor \
 	motor/motor_dc

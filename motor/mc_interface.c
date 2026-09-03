@@ -1301,7 +1301,7 @@ float mc_interface_get_rpm(void)
 	switch (motor_now()->m_conf.motor_type)
 	{
 	case MOTOR_TYPE_DC:
-		// TODO: add this possiblility
+		ret = mcpwm_dc_get_rpm();
 		break;
 
 	case MOTOR_TYPE_BLDC:

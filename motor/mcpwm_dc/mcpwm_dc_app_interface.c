@@ -28,7 +28,12 @@ bool mcpwm_dc_app_is_speed_control_active(void)
     return speed_control_active;
 }
 
-void mcpwm_dc_app_set_current_rpm(float rpm)
+float mcpwm_dc_app_get_rpm_set(void)
+{
+    return rpm_set;
+}
+
+void mcpwm_dc_app_set_rpm_now(float rpm)
 {
     rpm_now = rpm;
 }
