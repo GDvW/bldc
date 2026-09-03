@@ -3,6 +3,7 @@
 
 // TODO: more consistency in naming. for example, mcpmw_dc only for public API
 // TODO: add documentation
+// TODO: rename container to launcher
 
 #include "conf_general.h"
 #include <stdint.h>

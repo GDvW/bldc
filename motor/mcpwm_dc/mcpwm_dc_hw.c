@@ -368,8 +368,6 @@ void stop_pwm_hw(void)
     TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Disable);
 
     TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
-
-    set_switching_frequency(conf->m_dc_f_sw);
 }
 // Stop all pwm on the motor
 void stop_pwm_motor_hw(void)
@@ -444,9 +442,49 @@ void set_dutycycle_hw(float dutycycle)
 
     utils_truncate_number(&dutycycle, conf->l_min_duty, conf->l_max_duty);
 
-    switching_frequency_now = conf->m_dc_f_sw;
-    timer_tmp.top = SYSTEM_CORE_CLOCK / (int)switching_frequency_now;
     timer_tmp.duty_motor = (uint16_t)((float)timer_tmp.top * dutycycle);
+
+    set_next_timer_settings(&timer_tmp);
+}
+
+void set_parking_brake_h_bridge_hw(bool enable_output)
+{
+    if (enable_output && PARKING_BRAKE_ENABLED)
+    {
+        TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_OCMode_PWM1);
+        TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+        TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Enable);
+    }
+    else
+    {
+        TIM_SelectOCxM(TIM1, TIM_Channel_2, TIM_ForcedAction_InActive);
+        TIM_CCxCmd(TIM1, TIM_Channel_2, TIM_CCx_Enable);
+        TIM_CCxNCmd(TIM1, TIM_Channel_2, TIM_CCxN_Disable);
+    }
+
+    TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
+
+    mc_timer_struct timer_tmp;
+
+    utils_sys_lock_cnt();
+    timer_tmp = timer_struct;
+    utils_sys_unlock_cnt();
+
+    update_adc_sample_pos(&timer_tmp);
+    set_next_timer_settings(&timer_tmp);
+}
+
+void set_dutycycle_parking_brake_hw(float dutycycle)
+{
+    mc_timer_struct timer_tmp;
+
+    utils_sys_lock_cnt();
+    timer_tmp = timer_struct;
+    utils_sys_unlock_cnt();
+
+    utils_truncate_number(&dutycycle, conf->l_min_duty, conf->l_max_duty);
+
+    timer_tmp.duty_brake = (uint16_t)((float)timer_tmp.top * dutycycle);
 
     set_next_timer_settings(&timer_tmp);
 }
@@ -466,8 +504,6 @@ void full_brake_hw(void)
     TIM_CCxNCmd(TIM1, TIM_Channel_3, TIM_CCxN_Enable);
 
     TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
-
-    set_switching_frequency(conf->m_dc_f_sw);
 }
 
 /**
@@ -498,6 +534,36 @@ bool update_h_bridge(void)
     return needs_update;
 }
 
-mc_timer_struct mcpwm_dc_hw_get_timer_config(void){
+/**
+ * Updates the H-bridge configuration so that the polarity is correct
+ * Returns true if the H-bridge configuration was updated
+ */
+bool update_h_bridge_parking_brake(void)
+{
+    static bool was_running = false;
+    static bool output_set_before = false;
+
+    const bool running = state_parking_brake == MC_STATE_RUNNING;
+
+    // Update needed in case we are running now and
+    // - state has changed
+    // - We are just starting. Other functions may have configured the H-bridge in an invalid way
+    const bool needs_update =
+        running &&
+        (!was_running || parking_brake_output_set != output_set_before);
+
+    if (needs_update)
+    {
+        set_parking_brake_h_bridge_hw(parking_brake_output_set);
+    }
+
+    was_running = running;
+    output_set_before = parking_brake_output_set;
+
+    return needs_update;
+}
+
+mc_timer_struct mcpwm_dc_hw_get_timer_config(void)
+{
     return timer_struct;
 }

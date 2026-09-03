@@ -6,6 +6,8 @@
 
 #define PARKING_BRAKE_ENABLED 1
 #define PARKING_BRAKE_CURRENT 500 // mA
+#define PARKING_BRAKE_DUTY 0.75
+#define PARKING_BRAKE_CONTROL_MODE CONTROL_MODE_DUTY
 
 // Everything with locals
 void mcpwm_dc_init_locals(void);
@@ -26,8 +28,9 @@ void stop_pwm_ll(void);
 void stop_pwm_motor_ll(void);
 void full_brake_ll(void);
 
-// Control loop
+// Control loops
 void run_control_loop(void);
+void run_parking_brake_control_loop(void);
 
 typedef enum
 {
@@ -41,6 +44,10 @@ extern volatile mc_configuration *conf;
 extern volatile mc_control_mode control_mode;
 // State of device: running, full_brake or none
 extern volatile mc_state state;
+
+// Parking brake state registers
+extern volatile mc_state state_parking_brake;
+extern volatile float duty_now_parking_brake;
 
 // For the speed control app
 // Whether speed control is being used or if it should be deactivated

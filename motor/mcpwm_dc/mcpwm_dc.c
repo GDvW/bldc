@@ -63,6 +63,7 @@ void mcpwm_dc_set_configuration(volatile mc_configuration *configuration) {
 	// Stop everything first to be safe
 	control_mode = CONTROL_MODE_NONE;
     stop_pwm_ll();
+    set_switching_frequency(configuration->m_dc_f_sw);
 
 	utils_sys_lock_cnt();
 	conf = configuration;

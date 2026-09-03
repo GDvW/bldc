@@ -75,6 +75,12 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
         run_control_loop();
     }
 
+    const bool parking_h_bridge_updated = update_h_bridge_parking_brake();
+
+    if (state_parking_brake == MC_STATE_RUNNING && !parking_h_bridge_updated){
+        run_parking_brake_control_loop();
+    }
+
     float dt = 1.0 / switching_frequency_now;
     mc_interface_mc_timer_isr(false, dt);
 

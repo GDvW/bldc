@@ -30,6 +30,8 @@ void mcpwm_dc_init_locals()
     control_mode = CONTROL_MODE_NONE;
     state = MC_STATE_OFF;
 
+    state_parking_brake = MC_STATE_OFF;
+
     speed_control_active = false;
 
     dutycycle_set = 0.0;
@@ -68,6 +70,9 @@ volatile mc_configuration *conf;
 volatile mc_control_mode control_mode;
 // State of device: running, full_brake or none
 volatile mc_state state;
+
+// Parking brake state registers
+volatile mc_state state_parking_brake;
 
 // For the speed control app
 // Whether speed control is being used or if it should be deactivated
