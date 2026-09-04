@@ -47,12 +47,14 @@ float mcpwm_dc_get_tot_current_filtered(void)
 
 float mcpwm_dc_get_tot_current_directional(void)
 {
-    return mcpwm_dc_get_tot_current() * fabsf(dutycycle_now);
+    const float retval = mcpwm_dc_get_tot_current();
+	return dutycycle_now > 0.0 ? retval : -retval;
 }
 
 float mcpwm_dc_get_tot_current_directional_filtered(void)
 {
-    return mcpwm_dc_get_tot_current_filtered() * fabsf(dutycycle_now);
+    const float retval = mcpwm_dc_get_tot_current_filtered();
+	return dutycycle_now > 0.0 ? retval : -retval;
 }
 
 float mcpwm_dc_get_tot_current_in(void)

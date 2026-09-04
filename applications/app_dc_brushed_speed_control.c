@@ -122,17 +122,21 @@ static THD_FUNCTION(rpm_thread, arg)
 static void after_measurement_taken(void)
 {
     // Filter the current
-    UTILS_LP_FAST(current_filtered, mc_interface_get_tot_current_directional(), 0.061); // 1st order IIR filter with fc = 100 Hz
+    // UTILS_LP_FAST(current_filtered, , 0.061); // 1st order IIR filter with fc = 100 Hz
+
+    current_filtered = mc_interface_get_tot_current_directional();
+    const float duty_now = mc_interface_get_duty_cycle_now();
 
     // Get the input voltage
-    const float motor_voltage = mc_interface_get_duty_cycle_now() * mc_interface_get_input_voltage_filtered();
+    // const float motor_voltage = mc_interface_get_duty_cycle_now() * mc_interface_get_input_voltage_filtered();
+    const float motor_voltage = duty_now * GET_INPUT_VOLTAGE();
 
     float bemf = motor_voltage - fabsf(current_filtered) * MOTOR_RESISTANCE;
-    if (bemf < 0.0){
-        bemf = 0.0;
-    }
+    // if (bemf < 0.0){
+    //     bemf = 0.0;
+    // }
 
-    rpm_now = SIGN(current_filtered) * bemf / MOTOR_CONSTANT;
+    rpm_now = SIGN(duty_now) * bemf / MOTOR_CONSTANT;
     mcpwm_dc_app_set_rpm_now(rpm_now);
 }
 
