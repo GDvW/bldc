@@ -23,6 +23,7 @@
 
 void mcpwm_dc_set_parking_brake(bool output_enabled)
 {
+    state_parking_brake = MC_STATE_RUNNING;
     parking_brake_output_set = output_enabled;
 }
 

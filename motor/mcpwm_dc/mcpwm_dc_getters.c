@@ -48,13 +48,13 @@ float mcpwm_dc_get_tot_current_filtered(void)
 float mcpwm_dc_get_tot_current_directional(void)
 {
     const float retval = mcpwm_dc_get_tot_current();
-	return dutycycle_now > 0.0 ? retval : -retval;
+    return dutycycle_now > 0.0 ? retval : -retval;
 }
 
 float mcpwm_dc_get_tot_current_directional_filtered(void)
 {
     const float retval = mcpwm_dc_get_tot_current_filtered();
-	return dutycycle_now > 0.0 ? retval : -retval;
+    return dutycycle_now > 0.0 ? retval : -retval;
 }
 
 float mcpwm_dc_get_tot_current_in(void)
@@ -82,6 +82,11 @@ mc_state mcpwm_dc_get_state(void)
     return state;
 }
 
+mc_control_mode mcpwm_dc_get_state_parking_brake(void)
+{
+    return state_parking_brake;
+}
+
 mc_control_mode mcpwm_dc_get_control_mode(void)
 {
     if (speed_control_active)
@@ -103,6 +108,11 @@ mc_control_mode mcpwm_dc_get_control_mode_base(void)
 float mcpwm_dc_get_switching_frequency_now(void)
 {
     return switching_frequency_now;
+}
+
+bool mcpwm_dc_is_parking_brake_engaged(void)
+{
+    return parking_brake_output_set;
 }
 
 bool mcpwm_dc_is_dccal_done(void)

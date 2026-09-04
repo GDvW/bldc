@@ -19,8 +19,7 @@
     Custom app to debug the internal state of the brushed dc motor module
     */
 
-#ifdef DEBUG_MCPWM_DC
-
+#ifdef MCPWM_DC_DEBUG
 #include "app.h"
 #include "ch.h"
 #include "hal.h"
@@ -68,6 +67,11 @@ static void terminal_debug(int argc, const char **argv)
     bool init_done = mcpwm_dc_init_done();
     mc_timer_struct timer_struct = mcpwm_dc_hw_get_timer_config();
 
+    float curr_pb = mcpwm_dc_get_tot_pb_current();
+    float curr_pb_filt = mcpwm_dc_get_tot_pb_current_filtered();
+    mc_control_mode state_pb = mcpwm_dc_get_state_parking_brake();
+    bool is_parking_brake_engaged = mcpwm_dc_is_parking_brake_engaged();
+
     int curr_adc_source_mask, curr_start_samples, curr0_sum, curr1_sum, curr2_sum, curr0_offset, curr1_offset, curr2_offset;
     mcpwm_dc_meas_get_info(&curr_adc_source_mask, &curr_start_samples, &curr0_sum, &curr1_sum, &curr2_sum, &curr0_offset, &curr1_offset, &curr2_offset);
 
@@ -107,6 +111,11 @@ static void terminal_debug(int argc, const char **argv)
     commands_printf("    curr0_offset: %d", curr0_offset);
     commands_printf("    curr1_offset: %d", curr1_offset);
     commands_printf("    curr2_offset: %d", curr2_offset);
+    commands_printf("  Parking brake:");
+    commands_printf("    Current: %.3f A", (double)curr_pb);
+    commands_printf("    Current filtered: %.3f A", (double)curr_pb_filt);
+    commands_printf("    State: %d", state_pb);
+    commands_printf("    Engaged: %d", is_parking_brake_engaged ? 1 : 0);
 }
 #endif
 
@@ -116,7 +125,7 @@ static void terminal_debug(int argc, const char **argv)
  */
 void app_custom_debug_start(void)
 {
-#ifdef DEBUG_MCPWM_DC
+#ifdef MCPWM_DC_DEBUG
     // Terminal commands for the VESC Tool terminal can be registered.
     terminal_register_command_callback(
         "debug",
@@ -132,7 +141,7 @@ void app_custom_debug_start(void)
  */
 void app_custom_debug_stop(void)
 {
-#ifdef DEBUG_MCPWM_DC
+#ifdef MCPWM_DC_DEBUG
     terminal_unregister_callback(terminal_debug);
 #endif
 }

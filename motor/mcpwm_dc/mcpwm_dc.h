@@ -40,11 +40,13 @@ float mcpwm_dc_get_tot_current_in_filtered(void);
 float mcpwm_dc_get_tot_pb_current(void);
 float mcpwm_dc_get_tot_pb_current_filtered(void);
 mc_state mcpwm_dc_get_state(void);
+mc_control_mode mcpwm_dc_get_state_parking_brake(void);
 mc_control_mode mcpwm_dc_get_control_mode(void);
 // Get which speed control is really being used.
 // If the normal control mode is speed, at the base, it is duty or current. This method retrieves that.
 mc_control_mode mcpwm_dc_get_control_mode_base(void);
 float mcpwm_dc_get_switching_frequency_now(void);
+bool mcpwm_dc_is_parking_brake_engaged(void);
 bool mcpwm_dc_is_dccal_done(void);
 bool mcpwm_dc_init_done(void);
 float mcpwm_dc_get_last_adc_isr_duration(void);
