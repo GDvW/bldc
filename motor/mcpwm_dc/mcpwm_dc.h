@@ -4,7 +4,6 @@
 // TODO: more consistency in naming. for example, mcpmw_dc only for public API
 // TODO: add documentation
 // TODO: rename container to launcher
-
 #include "conf_general.h"
 #include <stdint.h>
 #include <stdbool.h>
@@ -38,6 +37,8 @@ float mcpwm_dc_get_tot_current_directional(void);
 float mcpwm_dc_get_tot_current_directional_filtered(void);
 float mcpwm_dc_get_tot_current_in(void);
 float mcpwm_dc_get_tot_current_in_filtered(void);
+float mcpwm_dc_get_tot_pb_current(void);
+float mcpwm_dc_get_tot_pb_current_filtered(void);
 mc_state mcpwm_dc_get_state(void);
 mc_control_mode mcpwm_dc_get_control_mode(void);
 // Get which speed control is really being used.
@@ -61,5 +62,4 @@ void mcpwm_dc_meas_get_info(
 
 // Debug
 bool mcpwm_dc_was_h_bridge_configured(void);
-
 #endif

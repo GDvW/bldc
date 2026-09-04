@@ -28,7 +28,7 @@ void run_control_loop(void)
 {
     const float input_voltage = GET_INPUT_VOLTAGE();
     const float current_nofilter = mcpwm_dc_get_tot_current();
-    const float current_in_nofilter = current_nofilter * fabsf(dutycycle_now);
+    const float current_in_nofilter = mcpwm_dc_get_tot_current_in();
 
     // Compensation for supply voltage variations
     const float voltage_scale = 20.0 / input_voltage;
@@ -65,7 +65,7 @@ void run_control_loop(void)
         }
 
         // Upper truncation
-        utils_truncate_number((float *)&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
+        utils_truncate_number(&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
 
         // Lower truncation
         if (fabsf(dutycycle_now_tmp) < conf->l_min_duty)
@@ -99,7 +99,7 @@ void run_control_loop(void)
         dutycycle_now_tmp += SIGN(dutycycle_now_tmp) * step;
 
         // Upper truncation
-        utils_truncate_number((float *)&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
+        utils_truncate_number(&dutycycle_now_tmp, -conf->l_max_duty, conf->l_max_duty);
 
         // Lower truncation
         if (fabsf(dutycycle_now_tmp) < conf->l_min_duty)
@@ -110,7 +110,7 @@ void run_control_loop(void)
     }
     else
     {
-        utils_step_towards((float *)&dutycycle_now_tmp, dutycycle_set, ramp_step);
+        utils_step_towards(&dutycycle_now_tmp, dutycycle_set, ramp_step);
     }
 
     static int limit_delay = 0;

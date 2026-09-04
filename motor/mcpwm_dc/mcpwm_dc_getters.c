@@ -57,12 +57,22 @@ float mcpwm_dc_get_tot_current_directional_filtered(void)
 
 float mcpwm_dc_get_tot_current_in(void)
 {
-    return mcpwm_dc_get_tot_current() * fabsf(dutycycle_now);
+    return mcpwm_dc_get_tot_current() * fabsf(dutycycle_now) + mcpwm_dc_get_tot_pb_current() * fabsf(duty_now_parking_brake);
 }
 
 float mcpwm_dc_get_tot_current_in_filtered(void)
 {
-    return mcpwm_dc_get_tot_current_filtered() * fabsf(dutycycle_now);
+    return mcpwm_dc_get_tot_current_filtered() * fabsf(dutycycle_now) + mcpwm_dc_get_tot_pb_current_filtered() * fabsf(duty_now_parking_brake);
+}
+
+float mcpwm_dc_get_tot_pb_current(void)
+{
+    return pb_last_current_sample;
+}
+
+float mcpwm_dc_get_tot_pb_current_filtered(void)
+{
+    return pb_last_current_sample_filtered;
 }
 
 mc_state mcpwm_dc_get_state(void)

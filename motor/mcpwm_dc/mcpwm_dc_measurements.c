@@ -24,6 +24,10 @@
 #include "mcpwm_dc_locals.h"
 #include "mcpwm_dc_hw.h"
 
+#ifndef HW_HAS_3_SHUNTS
+#error "HW_HAS_3_SHUNTS must be defined. If it is not defined, the hardware likely does not have 3 current shunts, so parking brake cannot be used. This interferes with other functionality, so the default software should be used"
+#endif
+
 static volatile int curr_adc_source_mask;
 static volatile int curr_start_samples;
 static volatile int curr0_sum;
@@ -228,15 +232,12 @@ void process_current_measurements(float curr0, float curr1, float curr2)
     ADC_curr_norm_value[1] = curr1;
     ADC_curr_norm_value[2] = curr2;
 
+    // ------------- MOTOR CURRENT -------------------
     // Calculate the total motor current and filter it
     float curr_tot_sample = 0;
     if (direction == DIRECTION_FORWARD)
     {
-#ifdef HW_HAS_3_SHUNTS
         curr_tot_sample = -(GET_CURRENT3() - curr2_offset) * FAC_CURRENT3;
-#else
-        curr_tot_sample = -(GET_CURRENT2() - curr1_offset) * FAC_CURRENT2;
-#endif
     }
     else
     {
@@ -256,6 +257,22 @@ void process_current_measurements(float curr0, float curr1, float curr2)
     last_current_sample_filtered = filter_run_fir_iteration(
         (float *)current_fir_samples, (float *)current_fir_coeffs,
         CURR_FIR_TAPS_BITS, current_fir_index);
+
+    // ---------- PARKING BRAKE CURRENT --------------
+    // NOTE: Maybe this should be inverted (* -1)
+    pb_last_current_sample = (GET_CURRENT2() - curr1_offset) * FAC_CURRENT2;
+
+    // Filter out outliers
+    if (fabsf(pb_last_current_sample) > (conf->l_abs_current_max * 1.2))
+    {
+        pb_last_current_sample = SIGN(pb_last_current_sample) * conf->l_abs_current_max * 1.2;
+    }
+
+    filter_add_sample((float *)pb_current_fir_samples, pb_last_current_sample,
+                      PB_CURR_FIR_TAPS_BITS, (uint32_t *)&pb_current_fir_index);
+    pb_last_current_sample_filtered = filter_run_fir_iteration(
+        (float *)pb_current_fir_samples, (float *)pb_current_fir_coeffs,
+        PB_CURR_FIR_TAPS_BITS, pb_current_fir_index);
 }
 
 void take_motor_voltage_measurement(bool h_bridge_updated)

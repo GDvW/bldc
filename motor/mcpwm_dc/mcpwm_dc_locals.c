@@ -31,6 +31,7 @@ void mcpwm_dc_init_locals()
     state = MC_STATE_OFF;
 
     state_parking_brake = MC_STATE_OFF;
+    duty_now_parking_brake = 0.0;
 
     speed_control_active = false;
 
@@ -48,6 +49,8 @@ void mcpwm_dc_init_locals()
 
     last_current_sample = 0.0;
     last_current_sample_filtered = 0.0;
+    pb_last_current_sample = 0.0;
+    pb_last_current_sample_filtered = 0.0;
 
     last_adc_inj_isr_duration = -1.0;
     last_adc_isr_duration = -1.0;
@@ -55,10 +58,13 @@ void mcpwm_dc_init_locals()
     init_done = false;
     dccal_done = false;
 
-    filter_create_fir_lowpass((float *)current_fir_coeffs, CURR_FIR_FCUT, CURR_FIR_TAPS_BITS, 1);
-
+    after_measurement_taken = 0;
+    
     // Create current FIR filter
     filter_create_fir_lowpass((float *)current_fir_coeffs, CURR_FIR_FCUT, CURR_FIR_TAPS_BITS, 1);
+    
+    // Create the parking brake FIR filter
+    filter_create_fir_lowpass((float *)pb_current_fir_coeffs, PB_CURR_FIR_FCUT, PB_CURR_FIR_TAPS_BITS, 1);
 
     // Create amplitude FIR filter
     filter_create_fir_lowpass((float *)amp_fir_coeffs, AMP_FIR_FCUT, AMP_FIR_TAPS_BITS, 1);
@@ -73,6 +79,7 @@ volatile mc_state state;
 
 // Parking brake state registers
 volatile mc_state state_parking_brake;
+volatile float duty_now_parking_brake;
 
 // For the speed control app
 // Whether speed control is being used or if it should be deactivated
@@ -93,6 +100,8 @@ volatile float switching_frequency_now;
 // Current measurements
 volatile float last_current_sample;
 volatile float last_current_sample_filtered;
+volatile float pb_last_current_sample;
+volatile float pb_last_current_sample_filtered;
 
 // Flags
 volatile bool init_done;
@@ -100,13 +109,23 @@ volatile bool dccal_done;
 volatile float last_adc_isr_duration;
 volatile float last_adc_inj_isr_duration;
 
+// DEBUG
 volatile bool was_h_bridge_configured;
+
+// Callbacks
+// Stores the measurement done callback. Meant for the app_interface
+void (*volatile after_measurement_taken)(void);
 
 // Filters
 // Current FIR filter
 volatile float current_fir_coeffs[CURR_FIR_LEN];
 volatile float current_fir_samples[CURR_FIR_LEN];
 volatile int current_fir_index;
+
+// Parking brake FIR filter
+volatile float pb_current_fir_coeffs[PB_CURR_FIR_LEN];
+volatile float pb_current_fir_samples[PB_CURR_FIR_LEN];
+volatile int pb_current_fir_index;
 
 // Amplitude FIR filter
 volatile float amp_fir_coeffs[AMP_FIR_LEN];

@@ -68,6 +68,8 @@ extern volatile float switching_frequency_now;
 // Current measurements
 extern volatile float last_current_sample;
 extern volatile float last_current_sample_filtered;
+extern volatile float pb_last_current_sample;
+extern volatile float pb_last_current_sample_filtered;
 
 // Flags
 extern volatile bool init_done;
@@ -80,7 +82,7 @@ extern volatile bool was_h_bridge_configured;
 
 // Callbacks
 // Stores the measurement done callback. Meant for the app_interface
-static void (*after_measurement_taken)(void) = 0;
+extern void (*volatile after_measurement_taken)(void);
 
 // Filters
 // Current FIR filter
@@ -90,6 +92,14 @@ static void (*after_measurement_taken)(void) = 0;
 extern volatile float current_fir_coeffs[CURR_FIR_LEN];
 extern volatile float current_fir_samples[CURR_FIR_LEN];
 extern volatile int current_fir_index;
+
+// Parking brake FIR filter
+#define PB_CURR_FIR_TAPS_BITS 4
+#define PB_CURR_FIR_LEN (1 << PB_CURR_FIR_TAPS_BITS)
+#define PB_CURR_FIR_FCUT 0.15
+extern volatile float pb_current_fir_coeffs[PB_CURR_FIR_LEN];
+extern volatile float pb_current_fir_samples[PB_CURR_FIR_LEN];
+extern volatile int pb_current_fir_index;
 
 // Amplitude FIR filter
 #define AMP_FIR_TAPS_BITS 7

@@ -14,8 +14,7 @@ CSRC += \
 	motor/mcpwm_dc/mcpwm_dc_measurements.c \
 	motor/mcpwm_dc/mcpwm_dc_setters.c \
 	motor/mcpwm_dc/mcpwm_dc_app_interface.c \
+	motor/mcpwm_dc/mcpwm_dc_control_loop_parking_brake.c \
 
 INCDIR += motor \
 	motor/motor_dc
-
-
