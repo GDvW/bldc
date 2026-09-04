@@ -100,13 +100,14 @@ void mcpwm_dc_set_current_hl(float current)
 void stop_pwm_ll(void)
 {
     state = MC_STATE_OFF;
+    state_parking_brake = MC_STATE_OFF;
     stop_pwm_hw();
 }
 
 void stop_pwm_motor_ll(void)
 {
     state = MC_STATE_OFF;
-    stop_pwm_hw();
+    stop_pwm_motor_hw();
 }
 
 void full_brake_ll(void)

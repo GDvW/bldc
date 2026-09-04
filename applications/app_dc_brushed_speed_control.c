@@ -36,7 +36,7 @@
 #include <string.h>
 #include <stdio.h>
 
-#define MOTOR_RESISTANCE 73 // Ohms
+#define MOTOR_RESISTANCE 2.6 // Ohms
 #define MOTOR_CONSTANT 0.01 // V/RPM
 
 // Threads
@@ -122,9 +122,9 @@ static THD_FUNCTION(rpm_thread, arg)
 static void after_measurement_taken(void)
 {
     // Filter the current
-    // UTILS_LP_FAST(current_filtered, , 0.061); // 1st order IIR filter with fc = 100 Hz
+    // UTILS_LP_FAST(current_filtered, mc_interface_get_tot_current_directional(), 0.061); // 1st order IIR filter with fc = 100 Hz
 
-    current_filtered = mc_interface_get_tot_current_directional();
+    current_filtered = mc_interface_get_tot_current_directional_filtered();
     const float duty_now = mc_interface_get_duty_cycle_now();
 
     // Get the input voltage
@@ -132,14 +132,15 @@ static void after_measurement_taken(void)
     const float motor_voltage = duty_now * GET_INPUT_VOLTAGE();
 
     float bemf = motor_voltage - fabsf(current_filtered) * MOTOR_RESISTANCE;
-    // if (bemf < 0.0){
-    //     bemf = 0.0;
-    // }
+    if (bemf < 0.1){
+        bemf = 0.0;
+    }
 
     rpm_now = SIGN(duty_now) * bemf / MOTOR_CONSTANT;
     mcpwm_dc_app_set_rpm_now(rpm_now);
 }
 
+// TODO: speed control works only (unstable) at what it says is 1000 RPM. 800 and lower make the motor stop
 static void run_pid_control_speed(float dt)
 {
     static float i_term = 0;
