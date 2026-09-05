@@ -46,6 +46,8 @@ void mcpwm_dc_init_locals()
     switching_frequency_now = conf->m_dc_f_sw;
 
     was_h_bridge_configured = false;
+    was_parking_h_bridge_updated = false;
+    has_parking_h_bridge_been_updated = false;
 
     last_current_sample = 0.0;
     last_current_sample_filtered = 0.0;
@@ -111,6 +113,8 @@ volatile float last_adc_inj_isr_duration;
 
 // DEBUG
 volatile bool was_h_bridge_configured;
+volatile bool was_parking_h_bridge_updated;
+volatile bool has_parking_h_bridge_been_updated;
 
 // Callbacks
 // Stores the measurement done callback. Meant for the app_interface

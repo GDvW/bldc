@@ -87,6 +87,11 @@ mc_control_mode mcpwm_dc_get_state_parking_brake(void)
     return state_parking_brake;
 }
 
+float mcpwm_dc_get_duty_parking_brake(void)
+{
+    return duty_now_parking_brake;
+}
+
 mc_control_mode mcpwm_dc_get_control_mode(void)
 {
     if (speed_control_active)
@@ -138,4 +143,19 @@ float mcpwm_dc_get_last_inj_adc_isr_duration(void)
 bool mcpwm_dc_was_h_bridge_configured(void)
 {
     return was_h_bridge_configured;
+}
+
+bool mcpwm_dc_was_parking_h_bridge_updated(void)
+{
+    return was_parking_h_bridge_updated;
+}
+
+bool mcpwm_dc_has_parking_h_bridge_been_updated(void)
+{
+    return has_parking_h_bridge_been_updated;
+}
+
+void mcpwm_dc_reset_has_parking_h_bridge_been_updated(void)
+{
+    has_parking_h_bridge_been_updated = false;
 }

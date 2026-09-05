@@ -534,6 +534,7 @@ bool update_h_bridge(void)
     return needs_update;
 }
 
+// TODO: Check if this is done correctly
 /**
  * Updates the H-bridge configuration so that the polarity is correct
  * Returns true if the H-bridge configuration was updated

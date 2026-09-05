@@ -76,6 +76,8 @@ void mcpwm_dc_adc_int_handler(void *p, uint32_t flags)
     }
 
     const bool parking_h_bridge_updated = update_h_bridge_parking_brake();
+    was_parking_h_bridge_updated = parking_h_bridge_updated;
+    has_parking_h_bridge_been_updated |= parking_h_bridge_updated;
 
     if (state_parking_brake == MC_STATE_RUNNING && !parking_h_bridge_updated){
         run_parking_brake_control_loop();

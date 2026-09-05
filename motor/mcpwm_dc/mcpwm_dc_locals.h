@@ -79,6 +79,8 @@ extern volatile float last_adc_inj_isr_duration;
 
 // DEBUG
 extern volatile bool was_h_bridge_configured;
+extern volatile bool was_parking_h_bridge_updated;
+extern volatile bool has_parking_h_bridge_been_updated;
 
 // Callbacks
 // Stores the measurement done callback. Meant for the app_interface

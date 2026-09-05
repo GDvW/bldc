@@ -19,6 +19,7 @@
     Custom app to debug the internal state of the brushed dc motor module
     */
 
+#define MCPWM_DC_DEBUG
 #ifdef MCPWM_DC_DEBUG
 #include "app.h"
 #include "ch.h"
@@ -43,6 +44,7 @@
 
 // Private functions
 static void terminal_debug(int argc, const char **argv);
+static void terminal_reset_bools(int argc, const char **argv);
 
 /**
  * Callback function for the terminal. Used to debug the internal state of the parking brake
@@ -71,6 +73,10 @@ static void terminal_debug(int argc, const char **argv)
     float curr_pb_filt = mcpwm_dc_get_tot_pb_current_filtered();
     mc_control_mode state_pb = mcpwm_dc_get_state_parking_brake();
     bool is_parking_brake_engaged = mcpwm_dc_is_parking_brake_engaged();
+    
+    float duty_now_parking_brake = mcpwm_dc_get_duty_parking_brake();
+    bool was_parking_h_bridge_updated = mcpwm_dc_was_parking_h_bridge_updated();
+    bool has_parking_h_bridge_been_updated = mcpwm_dc_has_parking_h_bridge_been_updated();
 
     int curr_adc_source_mask, curr_start_samples, curr0_sum, curr1_sum, curr2_sum, curr0_offset, curr1_offset, curr2_offset;
     mcpwm_dc_meas_get_info(&curr_adc_source_mask, &curr_start_samples, &curr0_sum, &curr1_sum, &curr2_sum, &curr0_offset, &curr1_offset, &curr2_offset);
@@ -112,10 +118,27 @@ static void terminal_debug(int argc, const char **argv)
     commands_printf("    curr1_offset: %d", curr1_offset);
     commands_printf("    curr2_offset: %d", curr2_offset);
     commands_printf("  Parking brake:");
+    commands_printf("    Duty cycle: %.3f", (double)duty_now_parking_brake);
     commands_printf("    Current: %.3f A", (double)curr_pb);
     commands_printf("    Current filtered: %.3f A", (double)curr_pb_filt);
     commands_printf("    State: %d", state_pb);
     commands_printf("    Engaged: %d", is_parking_brake_engaged ? 1 : 0);
+    commands_printf("    was_parking_h_bridge_updated: %d", was_parking_h_bridge_updated ? 1 : 0);
+    commands_printf("    has_parking_h_bridge_been_updated: %d", has_parking_h_bridge_been_updated ? 1 : 0);
+    commands_printf("  Timers:");
+    commands_printf("    TIM1 ARR: %u", TIM1->ARR);
+    commands_printf("    TIM1 CCR1: %u", TIM1->CCR1);
+    commands_printf("    TIM1 CCR2: %u", TIM1->CCR2);
+    commands_printf("    TIM1 CCR3: %u", TIM1->CCR3);
+    commands_printf("    TIM1 CCR4: %u", TIM1->CCR4);
+    commands_printf("    TIM8 CCR1: %u", TIM8->CCR1);
+    commands_printf("    TIM8 CCR2: %u", TIM8->CCR2);
+    commands_printf("    TIM8 CCR3: %u", TIM8->CCR3);
+    commands_printf("    TIM1 CNT: %u", TIM1->CNT);
+}
+
+static void terminal_reset_bools(int argc, const char **argv){
+    mcpwm_dc_reset_has_parking_h_bridge_been_updated();
 }
 #endif
 
@@ -132,6 +155,11 @@ void app_custom_debug_start(void)
         "Print debug info about mcpwm module",
         NULL,
         terminal_debug);
+    terminal_register_command_callback(
+        "reset_pb",
+        "Reset a parking brake register for debugging",
+        NULL,
+        terminal_reset_bools);
 #endif
 }
 
@@ -143,5 +171,8 @@ void app_custom_debug_stop(void)
 {
 #ifdef MCPWM_DC_DEBUG
     terminal_unregister_callback(terminal_debug);
+    terminal_unregister_callback(terminal_reset_bools);
+#else 
+#pragma message("DEBUG NOT included")
 #endif
 }

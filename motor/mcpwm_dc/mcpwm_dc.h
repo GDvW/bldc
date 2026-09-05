@@ -41,6 +41,7 @@ float mcpwm_dc_get_tot_pb_current(void);
 float mcpwm_dc_get_tot_pb_current_filtered(void);
 mc_state mcpwm_dc_get_state(void);
 mc_control_mode mcpwm_dc_get_state_parking_brake(void);
+float mcpwm_dc_get_duty_parking_brake(void);
 mc_control_mode mcpwm_dc_get_control_mode(void);
 // Get which speed control is really being used.
 // If the normal control mode is speed, at the base, it is duty or current. This method retrieves that.
@@ -64,4 +65,8 @@ void mcpwm_dc_meas_get_info(
 
 // Debug
 bool mcpwm_dc_was_h_bridge_configured(void);
+bool mcpwm_dc_was_parking_h_bridge_updated(void);
+bool mcpwm_dc_has_parking_h_bridge_been_updated(void);
+void mcpwm_dc_reset_has_parking_h_bridge_been_updated(void);
+
 #endif
