@@ -118,30 +118,13 @@ void full_brake_ll(void)
 
 static void start_control_loop(float dutycycle)
 {
-    // Check if dutycycle set will make motor run (case 1) or stop (case 2)
     if (fabsf(dutycycle) >= conf->l_min_duty)
     {
-        // dutycycle_now is updated by the back-emf detection. If the motor already
-        // is spinning, it will be non-zero.
-        // NOTE: not sure if above comment also applies to DC motors
-        if (fabsf(dutycycle_now) < conf->l_min_duty)
-        {
-            dutycycle_now = SIGN(dutycycle) * conf->l_min_duty;
-        }
-
-        mcpwm_dc_set_duty_ll(dutycycle_now);
+        dutycycle_now = SIGN(dutycycle) * conf->l_min_duty;
+        state = MC_STATE_RUNNING;
     }
     else
     {
-        // In case the motor is already spinning, set the state to running
-        // so that it can be ramped down before the full brake is applied.
-        if (fabsf(dutycycle_now) > 0.1)
-        {
-            state = MC_STATE_RUNNING;
-        }
-        else
-        {
-            full_brake_ll();
-        }
+        full_brake_ll();
     }
 }

@@ -21,9 +21,15 @@
 #include "mcpwm_dc_hw.h"
 
 static volatile mc_timer_struct timer_struct;
+// Keeps whether the current h-bridge configuration matches what is set by the control loop
+// This should be invalidated anytime the h-bridge configuration on channel 1 and 3 is changed outside set_direction_hw
+// True means that the current configuration does not match the expected one.
+static volatile bool h_bridge_reconfigured;
 
 void mcpwm_dc_init_hw()
 {
+    h_bridge_reconfigured = true;
+
     // Initialize clocks
     // TIM1 is used to generate PWM signals
     // TIM8 and TIM1->CC4 is used for ADC sampling
@@ -351,6 +357,8 @@ void set_switching_frequency(float frequency)
 // Stop all pwm on all gates
 void stop_pwm_hw(void)
 {
+    h_bridge_reconfigured = true;
+
 #ifdef HW_HAS_DRV8313
     DISABLE_BR();
 #endif
@@ -369,9 +377,12 @@ void stop_pwm_hw(void)
 
     TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
 }
+
 // Stop all pwm on the motor
 void stop_pwm_motor_hw(void)
 {
+    h_bridge_reconfigured = true;
+
 #ifdef HW_HAS_DRV8313
     DISABLE_BR();
 #endif
@@ -392,6 +403,8 @@ void stop_pwm_motor_hw(void)
  */
 void set_direction_hw(void)
 {
+    h_bridge_reconfigured = false;
+    
     if (direction == DIRECTION_FORWARD)
     {
         // +
@@ -491,6 +504,8 @@ void set_dutycycle_parking_brake_hw(float dutycycle)
 
 void full_brake_hw(void)
 {
+    h_bridge_reconfigured = true;
+
 #ifdef HW_HAS_DRV8313
     ENABLE_BR();
 #endif
@@ -512,7 +527,6 @@ void full_brake_hw(void)
  */
 bool update_h_bridge(void)
 {
-    static bool was_running = false;
     static direction_t direction_before = DIRECTION_FORWARD;
 
     const bool running = state == MC_STATE_RUNNING;
@@ -521,14 +535,13 @@ bool update_h_bridge(void)
     // - We are just starting. Other functions have configured the H-bridge in an invalid way
     const bool needs_update =
         running &&
-        (!was_running || direction != direction_before);
+        (h_bridge_reconfigured || direction != direction_before);
 
     if (needs_update)
     {
         set_direction_hw();
     }
 
-    was_running = running;
     direction_before = direction;
 
     return needs_update;

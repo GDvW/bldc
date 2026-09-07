@@ -73,7 +73,7 @@ static void terminal_debug(int argc, const char **argv)
     float curr_pb_filt = mcpwm_dc_get_tot_pb_current_filtered();
     mc_control_mode state_pb = mcpwm_dc_get_state_parking_brake();
     bool is_parking_brake_engaged = mcpwm_dc_is_parking_brake_engaged();
-    
+
     float duty_now_parking_brake = mcpwm_dc_get_duty_parking_brake();
     bool was_parking_h_bridge_updated = mcpwm_dc_was_parking_h_bridge_updated();
     bool has_parking_h_bridge_been_updated = mcpwm_dc_has_parking_h_bridge_been_updated();
@@ -135,9 +135,30 @@ static void terminal_debug(int argc, const char **argv)
     commands_printf("    TIM8 CCR2: %u", TIM8->CCR2);
     commands_printf("    TIM8 CCR3: %u", TIM8->CCR3);
     commands_printf("    TIM1 CNT: %u", TIM1->CNT);
+    commands_printf("  HW config:");
+    commands_printf(
+        "    [CH1] OC1M=%u | CH1=%s | CH1N=%s",
+        (unsigned int)((TIM1->CCMR1 >> 4) & 0x7),
+        (TIM1->CCER & TIM_CCER_CC1E) ? "ENABLED" : "DISABLED",
+        (TIM1->CCER & TIM_CCER_CC1NE) ? "ENABLED" : "DISABLED");
+    commands_printf(
+        "    [CH2] OC2M=%u | CH2=%s | CH2N=%s",
+        (unsigned int)((TIM1->CCMR1 >> 12) & 0x7),
+        (TIM1->CCER & TIM_CCER_CC2E) ? "ENABLED" : "DISABLED",
+        (TIM1->CCER & TIM_CCER_CC2NE) ? "ENABLED" : "DISABLED");
+    commands_printf(
+        "    [CH3] OC3M=%u | CH3=%s | CH3N=%s",
+        (unsigned int)((TIM1->CCMR2 >> 4) & 0x7),
+        (TIM1->CCER & TIM_CCER_CC3E) ? "ENABLED" : "DISABLED",
+        (TIM1->CCER & TIM_CCER_CC3NE) ? "ENABLED" : "DISABLED");
+    commands_printf(
+        "    [TIM1 MOE] %s (BDTR=0x%04X)",
+        (TIM1->BDTR & TIM_BDTR_MOE) ? "ENABLED" : "DISABLED",
+        (unsigned int)TIM1->BDTR);
 }
 
-static void terminal_reset_bools(int argc, const char **argv){
+static void terminal_reset_bools(int argc, const char **argv)
+{
     mcpwm_dc_reset_has_parking_h_bridge_been_updated();
 }
 #endif
@@ -172,7 +193,7 @@ void app_custom_debug_stop(void)
 #ifdef MCPWM_DC_DEBUG
     terminal_unregister_callback(terminal_debug);
     terminal_unregister_callback(terminal_reset_bools);
-#else 
+#else
 #pragma message("DEBUG NOT included")
 #endif
 }
