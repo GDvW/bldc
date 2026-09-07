@@ -101,7 +101,8 @@ void mcpwm_dc_init_hw()
     TIM_BDTRInitStructure.TIM_AutomaticOutput = TIM_AutomaticOutput_Disable;
 
     TIM_BDTRConfig(TIM1, &TIM_BDTRInitStructure);
-    TIM_CCPreloadControl(TIM1, ENABLE);
+    // NOTE: should be enabled
+    TIM_CCPreloadControl(TIM1, DISABLE);
     TIM_ARRPreloadConfig(TIM1, ENABLE);
 
     // --- Structure declarations for ADC, DMA, and common ADC settings ---
@@ -431,6 +432,7 @@ void set_direction_hw(void)
     }
 
     TIM_GenerateEvent(TIM1, TIM_EventSource_COM);
+    TIM_GenerateEvent(TIM1, TIM_EventSource_Update);
 
     mc_timer_struct timer_tmp;
 

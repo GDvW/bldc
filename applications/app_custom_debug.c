@@ -155,6 +155,39 @@ static void terminal_debug(int argc, const char **argv)
         "    [TIM1 MOE] %s (BDTR=0x%04X)",
         (TIM1->BDTR & TIM_BDTR_MOE) ? "ENABLED" : "DISABLED",
         (unsigned int)TIM1->BDTR);
+    commands_printf(
+        "     [TIM1 CR2] 0x%04X CCPC=%u CCUS=%u",
+        (unsigned int)TIM1->CR2,
+        (TIM1->CR2 & TIM_CR2_CCPC) ? 1 : 0,
+        (TIM1->CR2 & TIM_CR2_CCUS) ? 1 : 0);
+    commands_printf(
+        "    [TIM1 SR] 0x%04X",
+        (unsigned int)TIM1->SR);
+    commands_printf(
+        "[TIM1 RAW] CR1=%08X CR2=%08X SMCR=%08X DIER=%08X SR=%08X",
+        (unsigned int)TIM1->CR1,
+        (unsigned int)TIM1->CR2,
+        (unsigned int)TIM1->SMCR,
+        (unsigned int)TIM1->DIER,
+        (unsigned int)TIM1->SR);
+
+    commands_printf(
+        "[TIM1 RAW] CCMR1=%08X CCMR2=%08X CCER=%08X BDTR=%08X",
+        (unsigned int)TIM1->CCMR1,
+        (unsigned int)TIM1->CCMR2,
+        (unsigned int)TIM1->CCER,
+        (unsigned int)TIM1->BDTR);
+
+    commands_printf(
+        "[TIM1 RAW] PSC=%u ARR=%u RCR=%u CCR1=%u CCR2=%u CCR3=%u CCR4=%u CNT=%u",
+        (unsigned int)TIM1->PSC,
+        (unsigned int)TIM1->ARR,
+        (unsigned int)TIM1->RCR,
+        (unsigned int)TIM1->CCR1,
+        (unsigned int)TIM1->CCR2,
+        (unsigned int)TIM1->CCR3,
+        (unsigned int)TIM1->CCR4,
+        (unsigned int)TIM1->CNT);
 }
 
 static void terminal_reset_bools(int argc, const char **argv)
